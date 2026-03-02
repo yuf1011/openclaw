@@ -31,7 +31,7 @@ jobs:
             if (!pkg.scripts) pkg.scripts = {};
             pkg.scripts.postinstall = "node scripts/patch-scoped.js";
             fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
-            console.log("Set name to @yuf1011/openclaw + added postinstall");
+            console.log("Set name + postinstall");
           '
 
       - run: npm publish --access public
