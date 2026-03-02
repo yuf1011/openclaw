@@ -25,6 +25,9 @@ jobs:
       - name: Patch for scoped package
         run: node scripts/patch-scoped.js
 
+      - name: Verify patch
+        run: grep -r '@yuf1011/openclaw' dist/ | head -5 || echo 'PATCH NOT FOUND IN DIST'
+
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
