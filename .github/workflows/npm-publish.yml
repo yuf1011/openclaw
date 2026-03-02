@@ -30,6 +30,10 @@ jobs:
             require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
+      - name: Patch CORE_PACKAGE_NAMES for scoped package
+        run: |
+          find dist -name '*.js' -exec sed -i 's/new Set(\["openclaw"\])/new Set(["openclaw","@yuf1011\/openclaw"])/g' {} +
+
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
