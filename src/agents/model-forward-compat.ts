@@ -380,14 +380,19 @@ const COPILOT_CLAUDE_PREFIXES = ["claude-opus-", "claude-sonnet-", "claude-haiku
 // Only Opus 4.6 is verified; Copilot enforces ~936K empirically.
 const COPILOT_1M_CONTEXT_WINDOW = 936_000;
 
-// Strip the "-1m" suffix to find the base model id that's in the registry,
+// Known suffixes that Copilot appends to a base model id.
+// "-1m" = 1M context variant, "-fast" = lower-latency variant.
+const COPILOT_KNOWN_SUFFIXES = ["-1m", "-fast"] as const;
+
+// Strip a known suffix to find the base model id that's in the registry,
 // trying both dot and dash notation.
 function deriveCopilotBaseModelIds(modelId: string): string[] {
   const lower = modelId.toLowerCase();
-  if (!lower.endsWith("-1m")) {
+  const matchedSuffix = COPILOT_KNOWN_SUFFIXES.find((s) => lower.endsWith(s));
+  if (!matchedSuffix) {
     return [];
   }
-  const base = lower.slice(0, -3); // strip "-1m"
+  const base = lower.slice(0, -matchedSuffix.length);
   const candidates = [base];
   // "claude-opus-4.6" ↔ "claude-opus-4-6"
   if (base.includes(".")) {
@@ -415,16 +420,17 @@ function resolveGitHubCopilotForwardCompatModel(
     return undefined;
   }
 
-  // For "-1m" variants, clone from the base model in the registry so we
-  // inherit api, baseUrl, headers, and auth — then override contextWindow.
+  // For suffixed variants ("-1m", "-fast"), clone from the base model in the
+  // registry so we inherit api, baseUrl, headers, and auth.
   const baseCandidates = deriveCopilotBaseModelIds(trimmedModelId);
   if (baseCandidates.length > 0) {
+    const is1m = lower.endsWith("-1m");
     return cloneFirstTemplateModel({
       normalizedProvider,
       trimmedModelId,
       templateIds: baseCandidates,
       modelRegistry,
-      patch: { contextWindow: COPILOT_1M_CONTEXT_WINDOW },
+      patch: is1m ? { contextWindow: COPILOT_1M_CONTEXT_WINDOW } : undefined,
     });
   }
 
