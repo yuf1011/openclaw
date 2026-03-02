@@ -22,17 +22,31 @@ jobs:
 
       - run: pnpm build
 
-      - name: Set scoped package name
+      - name: Patch for scoped package
         run: |
           node -e "
+            const fs = require('fs');
+            const path = require('path');
+            // Fix package.json name
             const pkg = require('./package.json');
             pkg.name = '@yuf1011/openclaw';
-            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            // Fix CORE_PACKAGE_NAMES in dist
+            const { execSync } = require('child_process');
+            const files = execSync('find dist -name \"*.js\"').toString().trim().split('\n');
+            let patched = 0;
+            const search = 'new Set([\"openclaw\"])';
+            const replace = 'new Set([\"openclaw\",\"@yuf1011/openclaw\"])';
+            for (const f of files) {
+              const src = fs.readFileSync(f, 'utf8');
+              if (src.includes(search)) {
+                fs.writeFileSync(f, src.split(search).join(replace));
+                patched++;
+                console.log('Patched: ' + f);
+              }
+            }
+            console.log('Total patched: ' + patched);
           "
-
-      - name: Patch CORE_PACKAGE_NAMES for scoped package
-        run: |
-          find dist -name '*.js' -exec sed -i 's/new Set(\["openclaw"\])/new Set(["openclaw","@yuf1011\/openclaw"])/g' {} +
 
       - run: npm publish --access public
         env:
