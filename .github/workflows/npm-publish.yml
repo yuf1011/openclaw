@@ -23,10 +23,16 @@ jobs:
       - run: pnpm build
 
       - name: Patch for scoped package
-        run: node scripts/patch-scoped.js
-
-      - name: Verify patch
-        run: grep -r '@yuf1011/openclaw' dist/ | head -5 || echo 'PATCH NOT FOUND IN DIST'
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const fs = require("fs");
+            pkg.name = "@yuf1011/openclaw";
+            if (!pkg.scripts) pkg.scripts = {};
+            pkg.scripts.postinstall = "node scripts/patch-scoped.js";
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+            console.log("Set name to @yuf1011/openclaw + added postinstall");
+          '
 
       - run: npm publish --access public
         env:
