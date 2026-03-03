@@ -300,16 +300,21 @@ export async function fetchNpmTagVersion(params: {
   const timeoutMs = params?.timeoutMs ?? 3500;
   const tag = params.tag;
   try {
+    // Query GitHub releases instead of npm registry
     const res = await fetchWithTimeout(
-      `https://registry.npmjs.org/openclaw/${encodeURIComponent(tag)}`,
-      {},
+      `https://api.github.com/repos/yuf1011/openclaw/releases/latest`,
+      { headers: { Accept: "application/vnd.github+json" } },
       Math.max(250, timeoutMs),
     );
     if (!res.ok) {
+      // 404 means no releases yet — gracefully return null
+      if (res.status === 404) return { tag, version: null };
       return { tag, version: null, error: `HTTP ${res.status}` };
     }
-    const json = (await res.json()) as { version?: unknown };
-    const version = typeof json?.version === "string" ? json.version : null;
+    const json = (await res.json()) as { tag_name?: unknown };
+    const tagName = typeof json?.tag_name === "string" ? json.tag_name : null;
+    // Strip leading "v" prefix if present (e.g. "v2026.3.1" -> "2026.3.1")
+    const version = tagName?.replace(/^v/, "") ?? null;
     return { tag, version };
   } catch (err) {
     return { tag, version: null, error: String(err) };
