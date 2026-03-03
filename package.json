@@ -1,5 +1,5 @@
 {
-  "name": "openclaw",
+  "name": "@yuf1011/openclaw",
   "version": "2026.3.2-3",
   "description": "Multi-channel AI gateway with extensible messaging integrations",
   "keywords": [],
@@ -30,7 +30,8 @@
     "dist/",
     "docs/",
     "extensions/",
-    "skills/"
+    "skills/",
+    "scripts/"
   ],
   "type": "module",
   "main": "dist/index.js",
@@ -121,6 +122,7 @@
     "openclaw": "node scripts/run-node.mjs",
     "openclaw:rpc": "node scripts/run-node.mjs agent --mode rpc --json",
     "plugins:sync": "node --import tsx scripts/sync-plugin-versions.ts",
+    "postinstall": "node scripts/patch-scoped.cjs",
     "prepack": "pnpm build && pnpm ui:build",
     "prepare": "command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath git-hooks || exit 0",
     "protocol:check": "pnpm protocol:gen && pnpm protocol:gen:swift && git diff --exit-code -- dist/protocol.schema.json apps/macos/Sources/OpenClawProtocol/GatewayModels.swift",
