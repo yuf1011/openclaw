@@ -23,10 +23,9 @@ jobs:
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
-          cache: pnpm
 
-      - name: Tag and version
-        id: tag
+      - name: Compute version
+        id: version
         run: |
           YEAR=$(date +%Y)
           MONTH=$(date +%-m)
@@ -41,35 +40,39 @@ jobs:
           VERSION="${YEAR}.${MONTH}.${DAY}"
           [ "$N" -gt 0 ] && VERSION="${VERSION}-${N}"
 
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Computed version: $VERSION, tag: $TAG"
+
+      - name: Patch package.json
+        run: |
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
             pkg.name = '@yuf1011/openclaw';
-            pkg.version = '${VERSION}';
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
+            pkg.version = '${{ steps.version.outputs.version }}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
+          echo "Patched package.json:"
+          head -3 package.json
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json
-          if git diff --staged --quiet; then
-            echo "No version change needed, skipping"
-            echo "skip=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          git commit -m "chore: bump version to ${VERSION}"
-          git tag "$TAG"
-          git push origin HEAD:main --follow-tags
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-
-      - name: Build and publish
-        if: steps.tag.outputs.skip != 'true'
+      - name: Build
         run: |
-          pnpm install --frozen-lockfile
           pnpm build
           pnpm ui:build
-          npm publish --access public
+
+      - name: Publish to npm
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create tag and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+          echo "Successfully published ${{ steps.version.outputs.version }} and tagged ${{ steps.version.outputs.tag }}"
