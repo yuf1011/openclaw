@@ -65,14 +65,16 @@ jobs:
             if (!pkg.files.includes('scripts/')) {
               pkg.files.push('scripts/');
             }
+            // Remove prepack to avoid build during publish
+            delete pkg.scripts.prepack;
+            delete pkg.scripts.prepublishOnly;
             // Add postinstall script
-            pkg.scripts = pkg.scripts || {};
             pkg.scripts.postinstall = 'node scripts/patch-scoped.cjs';
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
           "
 
           echo "Patched package.json:"
-          head -10 package.json
+          head -15 package.json
           echo "---"
           echo "Scripts dir:"
           ls -la scripts/
