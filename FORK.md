@@ -27,3 +27,5 @@ npm i -g @yuf1011/openclaw
 | Auto Tag       | Push to main   | Create date-based version tag       |
 | Publish to npm | Tag push       | Build and publish @yuf1011/openclaw |
 | CI             | Push / PR      | Code quality checks                 |
+
+<!-- test publish pipeline -->
