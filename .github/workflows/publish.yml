@@ -59,6 +59,12 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Patch fork package name recognition
+        run: |
+          find dist -type f -name '*.js' -exec             sed -i 's/new Set(\["openclaw"\])/new Set(["openclaw","@yuf1011\/openclaw"])/g' {} +
+          PATCHED=$(grep -rl '@yuf1011/openclaw' dist/ | wc -l)
+          echo "Patched $PATCHED dist files for scoped package name recognition"
+
       - name: Prepare for publish
         run: |
           node -e "
