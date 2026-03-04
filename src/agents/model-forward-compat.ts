@@ -242,6 +242,57 @@ function resolveZaiGlm5ForwardCompatModel(
   } as Model<Api>);
 }
 
+const COPILOT_1M_CONTEXT_WINDOW = 936_000;
+
+const COPILOT_SUFFIX_OVERRIDES: Record<string, { contextWindow?: number }> = {
+  "-1m": { contextWindow: COPILOT_1M_CONTEXT_WINDOW },
+  "-fast": {}, // inherits base model context window
+};
+
+function deriveCopilotBaseModelIds(modelId: string): {
+  candidates: string[];
+  patch: { contextWindow?: number };
+} {
+  const lower = modelId.toLowerCase();
+  for (const [suffix, patch] of Object.entries(COPILOT_SUFFIX_OVERRIDES)) {
+    if (!lower.endsWith(suffix)) {
+      continue;
+    }
+    const base = lower.slice(0, -suffix.length);
+    const candidates = [base];
+    if (base.includes(".")) {
+      candidates.push(base.replace(/\./g, "-"));
+    } else {
+      candidates.push(base.replace(/-(\d+)$/, ".$1"));
+    }
+    return { candidates, patch };
+  }
+  return { candidates: [], patch: {} };
+}
+
+function resolveCopilotSuffixForwardCompatModel(
+  provider: string,
+  modelId: string,
+  modelRegistry: ModelRegistry,
+): Model<Api> | undefined {
+  const normalizedProvider = normalizeProviderId(provider);
+  if (normalizedProvider !== "github-copilot") {
+    return undefined;
+  }
+  const trimmedModelId = modelId.trim();
+  const { candidates: baseCandidates, patch } = deriveCopilotBaseModelIds(trimmedModelId);
+  if (baseCandidates.length === 0) {
+    return undefined;
+  }
+  return cloneFirstTemplateModel({
+    normalizedProvider,
+    trimmedModelId,
+    templateIds: baseCandidates,
+    modelRegistry,
+    patch: patch.contextWindow ? { contextWindow: patch.contextWindow } : undefined,
+  });
+}
+
 export function resolveForwardCompatModel(
   provider: string,
   modelId: string,
@@ -252,6 +303,7 @@ export function resolveForwardCompatModel(
     resolveAnthropicOpus46ForwardCompatModel(provider, modelId, modelRegistry) ??
     resolveAnthropicSonnet46ForwardCompatModel(provider, modelId, modelRegistry) ??
     resolveZaiGlm5ForwardCompatModel(provider, modelId, modelRegistry) ??
-    resolveGoogleGeminiCli31ForwardCompatModel(provider, modelId, modelRegistry)
+    resolveGoogleGeminiCli31ForwardCompatModel(provider, modelId, modelRegistry) ??
+    resolveCopilotSuffixForwardCompatModel(provider, modelId, modelRegistry)
   );
 }

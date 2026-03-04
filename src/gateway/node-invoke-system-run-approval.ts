@@ -78,7 +78,7 @@ function pickSystemRunParams(raw: Record<string, unknown>): Record<string, unkno
     "runId",
   ]) {
     if (key in raw) {
-      next[key] = raw[key];
+      next[key] = key === "rawCommand" ? null : raw[key];
     }
   }
   return next;
@@ -115,7 +115,7 @@ export function sanitizeSystemRunParamsForForwarding(opts: {
   if (!wantsApprovalOverride) {
     const cmdTextResolution = resolveSystemRunCommand({
       command: p.command,
-      rawCommand: p.rawCommand,
+      rawCommand: null,
     });
     if (!cmdTextResolution.ok) {
       return {
@@ -211,7 +211,7 @@ export function sanitizeSystemRunParamsForForwarding(opts: {
   const runtimeContext = resolveSystemRunApprovalRuntimeContext({
     plan: snapshot.request.systemRunPlan ?? null,
     command: p.command,
-    rawCommand: p.rawCommand,
+    rawCommand: null,
     cwd: p.cwd,
     agentId: p.agentId,
     sessionKey: p.sessionKey,
@@ -225,11 +225,7 @@ export function sanitizeSystemRunParamsForForwarding(opts: {
   }
   if (runtimeContext.plan) {
     next.command = [...runtimeContext.plan.argv];
-    if (runtimeContext.rawCommand) {
-      next.rawCommand = runtimeContext.rawCommand;
-    } else {
-      delete next.rawCommand;
-    }
+    next.rawCommand = null;
     if (runtimeContext.cwd) {
       next.cwd = runtimeContext.cwd;
     } else {

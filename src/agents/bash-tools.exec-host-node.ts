@@ -102,7 +102,7 @@ export async function executeNodeHostCommand(
       command: "system.run.prepare",
       params: {
         command: argv,
-        rawCommand: params.command,
+        rawCommand: null,
         cwd: params.workdir,
         agentId: params.agentId,
         sessionKey: params.sessionKey,
@@ -115,7 +115,6 @@ export async function executeNodeHostCommand(
     throw new Error("invalid system.run.prepare response");
   }
   const runArgv = prepared.plan.argv;
-  const runRawCommand = prepared.plan.rawCommand ?? prepared.cmdText;
   const runCwd = prepared.plan.cwd ?? params.workdir;
   const runAgentId = prepared.plan.agentId ?? params.agentId;
   const runSessionKey = prepared.plan.sessionKey ?? params.sessionKey;
@@ -195,7 +194,7 @@ export async function executeNodeHostCommand(
       command: "system.run",
       params: {
         command: runArgv,
-        rawCommand: runRawCommand,
+        rawCommand: null,
         cwd: runCwd,
         env: nodeEnv,
         timeoutMs: typeof params.timeoutSec === "number" ? params.timeoutSec * 1000 : undefined,
