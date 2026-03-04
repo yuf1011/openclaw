@@ -17,8 +17,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -44,28 +42,43 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Computed version: $VERSION, tag: $TAG"
 
-      - name: Patch package.json
+      - name: Download official package and apply fork patches
         run: |
+          # Download and extract official package
+          npm pack openclaw@latest
+          tar -xzf openclaw-*.tgz
+          cd package
+
+          # Create scripts directory if not exists
+          mkdir -p scripts
+
+          # Copy fork-specific files from repo
+          cp ../scripts/patch-scoped.cjs scripts/ || true
+
+          # Patch package.json
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
             pkg.name = '@yuf1011/openclaw';
             pkg.version = '${{ steps.version.outputs.version }}';
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            // Add fork-specific files to 'files' array if not present
+            if (!pkg.files.includes('scripts/')) {
+              pkg.files.push('scripts/');
+            }
+            // Add postinstall script
+            pkg.scripts = pkg.scripts || {};
+            pkg.scripts.postinstall = 'node scripts/patch-scoped.cjs';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
           "
+
           echo "Patched package.json:"
-          head -3 package.json
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: |
-          pnpm build
-          pnpm ui:build
+          head -10 package.json
+          echo "---"
+          echo "Scripts dir:"
+          ls -la scripts/
 
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish ./package --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
