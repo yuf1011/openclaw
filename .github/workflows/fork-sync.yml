@@ -28,6 +28,11 @@ jobs:
         run: |
           git remote add upstream https://github.com/openclaw/openclaw.git || true
           git fetch upstream
+
+          # Save fork-owned workflow files before reset
+          mkdir -p /tmp/fork-workflows
+          cp .github/workflows/fork-sync.yml /tmp/fork-workflows/
+
           git checkout main
           git reset --hard upstream/main
 
@@ -38,8 +43,11 @@ jobs:
                build-release.yml
           cd ../..
 
+          # Restore fork-owned workflows
+          cp /tmp/fork-workflows/fork-sync.yml .github/workflows/fork-sync.yml
+
           git add -A
-          git diff --cached --quiet || git commit -m "chore: remove upstream-only workflows"
+          git diff --cached --quiet || git commit -m "chore: sync upstream, maintain fork workflows"
           git push origin main --force
 
       - name: Merge main into dev
