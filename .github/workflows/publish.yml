@@ -57,7 +57,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: pnpm build
+        run: pnpm build && pnpm ui:build
 
       - name: Patch fork package name recognition
         run: |
