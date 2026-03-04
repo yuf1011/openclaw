@@ -34,26 +34,25 @@ jobs:
             N=$((N+1))
             TAG="v${YEAR}.${MONTH}.${DAY}-${N}"
           done
-
           VERSION="${YEAR}.${MONTH}.${DAY}"
           [ "$N" -gt 0 ] && VERSION="${VERSION}-${N}"
-
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Computed version: $VERSION, tag: $TAG"
 
       - name: Download official package and apply fork patches
         run: |
-          # Download and extract official package
           npm pack openclaw@latest
           tar -xzf openclaw-*.tgz
           cd package
 
-          # Create scripts directory if not exists
+          # Copy fork-specific scripts
           mkdir -p scripts
+          cp ../scripts/patch-scoped.cjs scripts/
+          cp ../scripts/patch-copilot-1m.sh scripts/
 
-          # Copy fork-specific files from repo
-          cp ../scripts/patch-scoped.cjs scripts/ || true
+          # Apply 1m model patch to dist files
+          OPENCLAW_DIST="$(pwd)/dist" SKIP_VERIFY=true bash scripts/patch-copilot-1m.sh
 
           # Patch package.json
           node -e "
@@ -61,23 +60,16 @@ jobs:
             const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
             pkg.name = '@yuf1011/openclaw';
             pkg.version = '${{ steps.version.outputs.version }}';
-            // Add fork-specific files to 'files' array if not present
-            if (!pkg.files.includes('scripts/')) {
-              pkg.files.push('scripts/');
-            }
-            // Remove prepack to avoid build during publish
+            if (!pkg.files) pkg.files = [];
+            if (!pkg.files.includes('scripts/')) pkg.files.push('scripts/');
             delete pkg.scripts.prepack;
             delete pkg.scripts.prepublishOnly;
-            // Add postinstall script
             pkg.scripts.postinstall = 'node scripts/patch-scoped.cjs';
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
           "
 
-          echo "Patched package.json:"
-          head -15 package.json
-          echo "---"
-          echo "Scripts dir:"
-          ls -la scripts/
+          echo "Package contents:"
+          head -10 package.json
 
       - name: Publish to npm
         run: npm publish ./package --access public
