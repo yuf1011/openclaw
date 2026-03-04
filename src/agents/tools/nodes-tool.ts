@@ -544,7 +544,7 @@ export function createNodesTool(options?: {
                 command: "system.run.prepare",
                 params: {
                   command,
-                  rawCommand: formatExecCommand(command),
+                  rawCommand: null,
                   cwd,
                   agentId,
                   sessionKey,

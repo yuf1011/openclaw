@@ -2,13 +2,11 @@ name: Fork Sync
 
 on:
   schedule:
-    - cron: '0 1 * * *'  # Daily UTC 01:00
+    - cron: '0 1 * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
-  pull-requests: write
-  issues: write
 
 jobs:
   sync:
@@ -17,64 +15,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure git
+      - name: Merge upstream
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Sync upstream to main
-        run: |
           git remote add upstream https://github.com/openclaw/openclaw.git || true
           git fetch upstream
-
-          # Save fork-owned workflow files before reset
-          mkdir -p /tmp/fork-workflows
-          cp .github/workflows/fork-sync.yml /tmp/fork-workflows/
-
-          git checkout main
-          git reset --hard upstream/main
-
-          # Remove upstream-only workflows
-          cd .github/workflows
-          rm -f auto-response.yml docker-release.yml install-smoke.yml \
-               labeler.yml sandbox-common-smoke.yml workflow-sanity.yml \
-               build-release.yml
-          cd ../..
-
-          # Restore fork-owned workflows
-          cp /tmp/fork-workflows/fork-sync.yml .github/workflows/fork-sync.yml
-
-          git add -A
-          git diff --cached --quiet || git commit -m "chore: sync upstream, maintain fork workflows"
-          git push origin main --force
-
-      - name: Merge main into dev
-        id: merge
-        run: |
-          git checkout dev
-          if git merge main --no-edit; then
-            git push origin dev
-            echo "status=clean" >> $GITHUB_OUTPUT
-          else
-            git merge --abort
-            echo "status=conflict" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Create conflict PR
-        if: steps.merge.outputs.status == 'conflict'
-        run: |
-          gh label create fork-sync-conflict --color d93f0b \
-            --description "Auto-sync merge conflict" 2>/dev/null || true
-          # Close any existing conflict PRs first
-          existing=$(gh pr list --label fork-sync-conflict --state open --json number -q '.[]|.number')
-          for pr in $existing; do
-            gh pr close $pr --comment "Superseded by new sync attempt."
-          done
-          gh pr create --head main --base dev \
-            --title "[fork-sync] ⚠️ Merge conflict: main → dev" \
-            --label fork-sync-conflict \
-            --body "自动 merge main → dev 失败，需要解决冲突。军师会自动检查并尝试解决。"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git merge upstream/main --no-edit
+          git push origin main
