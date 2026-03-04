@@ -22,6 +22,10 @@ jobs:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
       - name: Compute version
         id: version
         run: |
@@ -40,21 +44,15 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Computed version: $VERSION, tag: $TAG"
 
-      - name: Download official package and apply fork patches
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Prepare package
         run: |
-          npm pack openclaw@latest
-          tar -xzf openclaw-*.tgz
-          cd package
-
-          # Copy fork-specific scripts
-          mkdir -p scripts
-          cp ../scripts/patch-scoped.cjs scripts/
-          cp ../scripts/patch-copilot-1m.sh scripts/
-
-          # Apply 1m model patch to dist files
-          OPENCLAW_DIST="$(pwd)/dist" SKIP_VERIFY=true bash scripts/patch-copilot-1m.sh
-
-          # Patch package.json
+          # Update package.json for fork publish
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
@@ -67,12 +65,10 @@ jobs:
             pkg.scripts.postinstall = 'node scripts/patch-scoped.cjs';
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
           "
-
-          echo "Package contents:"
-          head -10 package.json
+          echo "Publishing @yuf1011/openclaw@${{ steps.version.outputs.version }}"
 
       - name: Publish to npm
-        run: npm publish ./package --access public
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
