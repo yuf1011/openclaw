@@ -44,13 +44,27 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Computed version: $VERSION, tag: $TAG"
 
-      - name: Prepare package.json before build
+      - name: Set version before build
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+            pkg.version = '${{ steps.version.outputs.version }}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
+          "
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Prepare for publish
         run: |
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
             pkg.name = '@yuf1011/openclaw';
-            pkg.version = '${{ steps.version.outputs.version }}';
             if (!pkg.files) pkg.files = [];
             if (!pkg.files.includes('scripts/')) pkg.files.push('scripts/');
             delete pkg.scripts.prepack;
@@ -58,13 +72,6 @@ jobs:
             pkg.scripts.postinstall = 'node scripts/patch-scoped.cjs';
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\\n');
           "
-          echo "Publishing @yuf1011/openclaw@${{ steps.version.outputs.version }}"
-
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-
-      - name: Build
-        run: pnpm build
 
       - name: Publish to npm
         run: npm publish --access public
