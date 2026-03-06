@@ -367,6 +367,17 @@ describe("resolveForwardCompatModel", () => {
     expect(model?.maxTokens).toBe(128_000);
   });
 
+  it("resolves github-copilot gpt-5.4 via codex template fallback", () => {
+    const registry = createRegistry({
+      "github-copilot/gpt-5.3-codex": {
+        ...createOpenAICodexTemplateModel("gpt-5.3-codex"),
+        provider: "github-copilot",
+      } as Model<Api>,
+    });
+    const model = resolveForwardCompatModel("github-copilot", "gpt-5.4", registry);
+    expectResolvedForwardCompat(model, { provider: "github-copilot", id: "gpt-5.4" });
+  });
+
   it("resolves anthropic opus 4.6 via 4.5 template", () => {
     const registry = createRegistry({
       "anthropic/claude-opus-4-5": createTemplateModel("anthropic", "claude-opus-4-5"),
