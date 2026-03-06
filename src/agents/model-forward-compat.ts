@@ -109,7 +109,7 @@ function cloneFirstTemplateModel(params: {
   return undefined;
 }
 
-const CODEX_GPT54_ELIGIBLE_PROVIDERS = new Set(["openai-codex"]);
+const CODEX_GPT54_ELIGIBLE_PROVIDERS = new Set(["openai-codex", "github-copilot"]);
 const CODEX_GPT53_ELIGIBLE_PROVIDERS = new Set(["openai-codex", "github-copilot"]);
 
 function resolveOpenAICodexForwardCompatModel(
