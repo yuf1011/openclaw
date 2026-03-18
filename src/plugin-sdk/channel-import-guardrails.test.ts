@@ -26,7 +26,6 @@ const GUARDED_CHANNEL_EXTENSIONS = new Set([
   "msteams",
   "nostr",
   "nextcloud-talk",
-  "nostr",
   "signal",
   "slack",
   "synology-chat",
@@ -119,6 +118,7 @@ const SETUP_BARREL_GUARDS: GuardedSource[] = [
 ];
 
 const LOCAL_EXTENSION_API_BARREL_GUARDS = [
+  "bluebubbles",
   "device-pair",
   "diagnostics-otel",
   "diffs",
@@ -128,6 +128,7 @@ const LOCAL_EXTENSION_API_BARREL_GUARDS = [
   "matrix",
   "mattermost",
   "memory-lancedb",
+  "msteams",
   "nextcloud-talk",
   "synology-chat",
   "talk-voice",

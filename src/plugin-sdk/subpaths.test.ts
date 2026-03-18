@@ -68,6 +68,7 @@ describe("plugin-sdk subpath exports", () => {
     expect(typeof coreSdk.definePluginEntry).toBe("function");
     expect(typeof coreSdk.defineChannelPluginEntry).toBe("function");
     expect(typeof coreSdk.defineSetupPluginEntry).toBe("function");
+    expect(typeof coreSdk.createChannelPluginBase).toBe("function");
     expect(typeof coreSdk.optionalStringEnum).toBe("function");
     expect("runPassiveAccountLifecycle" in asExports(coreSdk)).toBe(false);
     expect("createLoggerBackedRuntime" in asExports(coreSdk)).toBe(false);
@@ -96,8 +97,18 @@ describe("plugin-sdk subpath exports", () => {
 
   it("exports shared setup helpers from the dedicated subpath", () => {
     expect(typeof setupSdk.DEFAULT_ACCOUNT_ID).toBe("string");
+    expect(typeof setupSdk.createAccountScopedAllowFromSection).toBe("function");
+    expect(typeof setupSdk.createAccountScopedGroupAccessSection).toBe("function");
+    expect(typeof setupSdk.createLegacyCompatChannelDmPolicy).toBe("function");
+    expect(typeof setupSdk.createNestedChannelDmPolicy).toBe("function");
+    expect(typeof setupSdk.createTopLevelChannelDmPolicy).toBe("function");
+    expect(typeof setupSdk.createTopLevelChannelDmPolicySetter).toBe("function");
     expect(typeof setupSdk.formatDocsLink).toBe("function");
     expect(typeof setupSdk.mergeAllowFromEntries).toBe("function");
+    expect(typeof setupSdk.patchNestedChannelConfigSection).toBe("function");
+    expect(typeof setupSdk.patchTopLevelChannelConfigSection).toBe("function");
+    expect(typeof setupSdk.resolveGroupAllowlistWithLookupNotes).toBe("function");
+    expect(typeof setupSdk.setAccountDmAllowFromForChannel).toBe("function");
     expect(typeof setupSdk.setTopLevelChannelDmPolicyWithAllowFrom).toBe("function");
     expect(typeof setupSdk.formatResolvedUnresolvedNote).toBe("function");
   });
