@@ -1,19 +1,20 @@
-import type { ChannelOnboardingDmPolicy } from "../../../src/channels/plugins/onboarding-types.js";
+import type { ChannelSetupAdapter } from "openclaw/plugin-sdk/channel-runtime";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
+import type { DmPolicy } from "openclaw/plugin-sdk/config-runtime";
+import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk/routing";
 import {
   mergeAllowFromEntries,
-  parseOnboardingEntriesWithParser,
+  parseSetupEntriesWithParser,
   setTopLevelChannelAllowFrom,
   setTopLevelChannelDmPolicyWithAllowFrom,
-  splitOnboardingEntries,
-} from "../../../src/channels/plugins/onboarding/helpers.js";
-import type { ChannelSetupWizard } from "../../../src/channels/plugins/setup-wizard.js";
-import type { ChannelSetupAdapter } from "../../../src/channels/plugins/types.adapters.js";
-import type { OpenClawConfig } from "../../../src/config/config.js";
-import type { DmPolicy } from "../../../src/config/types.js";
-import { DEFAULT_ACCOUNT_ID } from "../../../src/routing/session-key.js";
-import { formatDocsLink } from "../../../src/terminal/links.js";
-import type { WizardPrompter } from "../../../src/wizard/prompts.js";
-import { DEFAULT_RELAYS, getPublicKeyFromPrivate, normalizePubkey } from "./nostr-bus.js";
+  splitSetupEntries,
+} from "openclaw/plugin-sdk/setup";
+import type { ChannelSetupDmPolicy } from "openclaw/plugin-sdk/setup";
+import type { ChannelSetupWizard } from "openclaw/plugin-sdk/setup";
+import { formatDocsLink } from "openclaw/plugin-sdk/setup";
+import type { WizardPrompter } from "openclaw/plugin-sdk/setup";
+import { DEFAULT_RELAYS } from "./default-relays.js";
+import { getPublicKeyFromPrivate, normalizePubkey } from "./nostr-bus.js";
 import { resolveNostrAccount } from "./types.js";
 
 const channel = "nostr" as const;
@@ -76,7 +77,7 @@ function setNostrAllowFrom(cfg: OpenClawConfig, allowFrom: string[]): OpenClawCo
 }
 
 function parseRelayUrls(raw: string): { relays: string[]; error?: string } {
-  const entries = splitOnboardingEntries(raw);
+  const entries = splitSetupEntries(raw);
   const relays: string[] = [];
   for (const entry of entries) {
     try {
@@ -93,7 +94,7 @@ function parseRelayUrls(raw: string): { relays: string[]; error?: string } {
 }
 
 function parseNostrAllowFrom(raw: string): { entries: string[]; error?: string } {
-  return parseOnboardingEntriesWithParser(raw, (entry) => {
+  return parseSetupEntriesWithParser(raw, (entry) => {
     const cleaned = entry.replace(/^nostr:/i, "").trim();
     try {
       return { value: normalizePubkey(cleaned) };
@@ -125,7 +126,7 @@ async function promptNostrAllowFrom(params: {
   return setNostrAllowFrom(params.cfg, mergeAllowFromEntries(existing, parsed.entries));
 }
 
-const nostrDmPolicy: ChannelOnboardingDmPolicy = {
+const nostrDmPolicy: ChannelSetupDmPolicy = {
   label: "Nostr",
   channel,
   policyKey: "channels.nostr.dmPolicy",
