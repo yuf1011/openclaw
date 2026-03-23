@@ -82,6 +82,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Plugins/Matrix: move bundled plugin `KeyedAsyncQueue` imports onto the stable `plugin-sdk/core` surface so Matrix Docker/runtime builds do not depend on the brittle keyed-async-queue subpath. Thanks @ecohash-co and @vincentkoc.
 - Nostr/security: enforce inbound DM policy before decrypt, route Nostr DMs through the standard reply pipeline, and add pre-crypto rate and size guards so unknown senders cannot bypass pairing or force unbounded crypto work. Thanks @kuranikaran.
 - Agents/default timeout: raise the shared default agent timeout from `600s` to `48h` so long-running ACP and agent sessions do not fail unless you configure a shorter limit.
 - Gateway/Linux: auto-detect nvm-managed Node TLS CA bundle needs before CLI startup and refresh installed services that are missing `NODE_EXTRA_CA_CERTS`. (#51146) Thanks @GodsBoy.
@@ -219,6 +220,7 @@ Docs: https://docs.openclaw.ai
 ### Fixes
 
 - Agents/bootstrap warnings: move bootstrap truncation warnings out of the system prompt and into the per-turn prompt body so prompt-cache reuse stays stable when truncation warnings appear or disappear. (#48753) Thanks @scoootscooob and @obviyus.
+- Plugins/Matrix: accept shared send-tool media aliases (`mediaUrl`, `filePath`, `path`) and preserve `asVoice` / `audioAsVoice` through Matrix action dispatch so media-only sends and voice-message intents reach the plugin send layer correctly. Thanks @psacc and @vincentkoc.
 - Telegram/DM topic session keys: route named-account DM topics through the same per-account base session key across inbound messages, native commands, and session-state lookups so `/status` and thread recovery stop creating phantom `agent:main:main:thread:...` sessions. (#48204) Thanks @vincentkoc.
 - macOS/node service startup: use `openclaw node start/stop --json` from the Mac app instead of the removed `openclaw service node ...` command shape, so current CLI installs expose the full node exec surface again. (#46843) Fixes #43171. Thanks @Br1an67.
 - macOS/launch at login: stop emitting `KeepAlive` for the desktop app launch agent so OpenClaw no longer relaunches immediately after a manual quit while launch at login remains enabled. (#40213) Thanks @stablegenius49.
