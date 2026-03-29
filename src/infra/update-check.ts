@@ -40,6 +40,13 @@ export type NpmTagStatus = {
   error?: string;
 };
 
+export type NpmPackageTargetStatus = {
+  target: string;
+  version: string | null;
+  nodeEngine: string | null;
+  error?: string;
+};
+
 export type UpdateCheckResult = {
   root: string | null;
   installKind: "git" | "package" | "unknown";
@@ -295,32 +302,46 @@ export async function fetchNpmLatestVersion(params?: {
   };
 }
 
+export async function fetchNpmPackageTargetStatus(params: {
+  target: string;
+  timeoutMs?: number;
+}): Promise<NpmPackageTargetStatus> {
+  const timeoutMs = params.timeoutMs ?? 3500;
+  const target = params.target;
+  try {
+    const res = await fetchWithTimeout(
+      `https://registry.npmjs.org/openclaw/${encodeURIComponent(target)}`,
+      {},
+      Math.max(250, timeoutMs),
+    );
+    if (!res.ok) {
+      return { target, version: null, nodeEngine: null, error: `HTTP ${res.status}` };
+    }
+    const json = (await res.json()) as {
+      version?: unknown;
+      engines?: { node?: unknown };
+    };
+    const version = typeof json?.version === "string" ? json.version : null;
+    const nodeEngine = typeof json?.engines?.node === "string" ? json.engines.node : null;
+    return { target, version, nodeEngine };
+  } catch (err) {
+    return { target, version: null, nodeEngine: null, error: String(err) };
+  }
+}
+
 export async function fetchNpmTagVersion(params: {
   tag: string;
   timeoutMs?: number;
 }): Promise<NpmTagStatus> {
-  const timeoutMs = params?.timeoutMs ?? 3500;
-  const tag = params.tag;
-  try {
-    // Query GitHub releases instead of npm registry
-    const res = await fetchWithTimeout(
-      `https://api.github.com/repos/yuf1011/openclaw/releases/latest`,
-      { headers: { Accept: "application/vnd.github+json" } },
-      Math.max(250, timeoutMs),
-    );
-    if (!res.ok) {
-      // 404 means no releases yet — gracefully return null
-      if (res.status === 404) return { tag, version: null };
-      return { tag, version: null, error: `HTTP ${res.status}` };
-    }
-    const json = (await res.json()) as { tag_name?: unknown };
-    const tagName = typeof json?.tag_name === "string" ? json.tag_name : null;
-    // Strip leading "v" prefix if present (e.g. "v2026.3.1" -> "2026.3.1")
-    const version = tagName?.replace(/^v/, "") ?? null;
-    return { tag, version };
-  } catch (err) {
-    return { tag, version: null, error: String(err) };
-  }
+  const res = await fetchNpmPackageTargetStatus({
+    target: params.tag,
+    timeoutMs: params.timeoutMs,
+  });
+  return {
+    tag: params.tag,
+    version: res.version,
+    error: res.error,
+  };
 }
 
 export async function resolveNpmChannelTag(params: {
