@@ -44,8 +44,6 @@ const defaultImportPiSdk = () => import("./pi-model-discovery-runtime.js");
 let importPiSdk = defaultImportPiSdk;
 let modelSuppressionPromise: Promise<typeof import("./model-suppression.runtime.js")> | undefined;
 
-const NON_PI_NATIVE_MODEL_PROVIDERS = new Set(["deepseek", "kilocode", "ollama"]);
-
 function shouldLogModelCatalogTiming(): boolean {
   return process.env.OPENCLAW_DEBUG_INGRESS_TIMING === "1";
 }
@@ -53,128 +51,6 @@ function shouldLogModelCatalogTiming(): boolean {
 function loadModelSuppression() {
   modelSuppressionPromise ??= import("./model-suppression.runtime.js");
   return modelSuppressionPromise;
-}
-
-const COPILOT_PROVIDER = "github-copilot";
-
-/** Copilot models that should appear in the configure wizard but may not be in
- *  the upstream pi-ai built-in catalog yet.  We inject them if they are missing
- *  so `openclaw configure` can list them. */
-const COPILOT_FORWARD_COMPAT_MODELS: Array<{
-  id: string;
-  contextWindow: number;
-  reasoning: boolean;
-}> = [
-  { id: "claude-opus-4.6-1m", contextWindow: 936_000, reasoning: true },
-  { id: "claude-opus-4.6-fast", contextWindow: 128_000, reasoning: true },
-  { id: "gpt-5.3-codex", contextWindow: 128_000, reasoning: false },
-];
-
-function applyCopilotForwardCompatModels(models: ModelCatalogEntry[]): void {
-  const seen = new Set(
-    models
-      .filter((m) => m.provider === COPILOT_PROVIDER)
-      .map((m) => m.id.toLowerCase().replace(/\./g, "-")),
-  );
-
-  for (const entry of COPILOT_FORWARD_COMPAT_MODELS) {
-    const normalized = entry.id.toLowerCase().replace(/\./g, "-");
-    if (seen.has(normalized)) {
-      continue;
-    }
-    models.push({
-      id: entry.id,
-      name: entry.id,
-      provider: COPILOT_PROVIDER,
-      contextWindow: entry.contextWindow,
-      reasoning: entry.reasoning,
-      input: ["text", "image"],
-    });
-    seen.add(normalized);
-  }
-}
-
-function normalizeConfiguredModelInput(input: unknown): ModelInputType[] | undefined {
-  if (!Array.isArray(input)) {
-    return undefined;
-  }
-  const normalized = input.filter(
-    (item): item is ModelInputType => item === "text" || item === "image" || item === "document",
-  );
-  return normalized.length > 0 ? normalized : undefined;
-}
-
-function readConfiguredOptInProviderModels(config: OpenClawConfig): ModelCatalogEntry[] {
-  const providers = config.models?.providers;
-  if (!providers || typeof providers !== "object") {
-    return [];
-  }
-
-  const out: ModelCatalogEntry[] = [];
-  for (const [providerRaw, providerValue] of Object.entries(providers)) {
-    const provider = providerRaw.toLowerCase().trim();
-    if (!NON_PI_NATIVE_MODEL_PROVIDERS.has(provider)) {
-      continue;
-    }
-    if (!providerValue || typeof providerValue !== "object") {
-      continue;
-    }
-
-    const configuredModels = (providerValue as { models?: unknown }).models;
-    if (!Array.isArray(configuredModels)) {
-      continue;
-    }
-
-    for (const configuredModel of configuredModels) {
-      if (!configuredModel || typeof configuredModel !== "object") {
-        continue;
-      }
-      const idRaw = (configuredModel as { id?: unknown }).id;
-      if (typeof idRaw !== "string") {
-        continue;
-      }
-      const id = idRaw.trim();
-      if (!id) {
-        continue;
-      }
-      const rawName = (configuredModel as { name?: unknown }).name;
-      const name = (typeof rawName === "string" ? rawName : id).trim() || id;
-      const contextWindowRaw = (configuredModel as { contextWindow?: unknown }).contextWindow;
-      const contextWindow =
-        typeof contextWindowRaw === "number" && contextWindowRaw > 0 ? contextWindowRaw : undefined;
-      const reasoningRaw = (configuredModel as { reasoning?: unknown }).reasoning;
-      const reasoning = typeof reasoningRaw === "boolean" ? reasoningRaw : undefined;
-      const input = normalizeConfiguredModelInput((configuredModel as { input?: unknown }).input);
-      out.push({ id, name, provider, contextWindow, reasoning, input });
-    }
-  }
-
-  return out;
-}
-
-function mergeConfiguredOptInProviderModels(params: {
-  config: OpenClawConfig;
-  models: ModelCatalogEntry[];
-}): void {
-  const configured = readConfiguredOptInProviderModels(params.config);
-  if (configured.length === 0) {
-    return;
-  }
-
-  const seen = new Set(
-    params.models.map(
-      (entry) => `${entry.provider.toLowerCase().trim()}::${entry.id.toLowerCase().trim()}`,
-    ),
-  );
-
-  for (const entry of configured) {
-    const key = `${entry.provider.toLowerCase().trim()}::${entry.id.toLowerCase().trim()}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    params.models.push(entry);
-    seen.add(key);
-  }
 }
 
 export function resetModelCatalogCacheForTest() {
@@ -275,10 +151,6 @@ export async function loadModelCatalog(params?: {
         const input = Array.isArray(entry?.input) ? entry.input : undefined;
         models.push({ id, name, provider, contextWindow, reasoning, input });
       }
-      mergeConfiguredOptInProviderModels({ config: cfg, models });
-      applySyntheticCatalogFallbacks(models);
-      applyCopilotForwardCompatModels(models);
-      logStage("configured-models-merged", `entries=${models.length}`);
       const supplemental = await augmentModelCatalogWithProviderPlugins({
         config: cfg,
         env: process.env,
@@ -305,7 +177,6 @@ export async function loadModelCatalog(params?: {
         }
       }
       logStage("plugin-models-merged", `entries=${models.length}`);
-
 
       if (models.length === 0) {
         // If we found nothing, don't cache this result so we can try again.
