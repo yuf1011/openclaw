@@ -1566,6 +1566,182 @@ describe("gateway server sessions", () => {
     ws.close();
   });
 
+  test("sessions.reset preserves legacy explicit model overrides without modelOverrideSource", async () => {
+    const { storePath } = await createSessionStoreDir();
+    testState.agentConfig = {
+      model: {
+        primary: "openai/gpt-test-a",
+      },
+    };
+
+    await writeSessionStore({
+      entries: {
+        main: {
+          sessionId: "sess-explicit-model-override",
+          updatedAt: Date.now(),
+          providerOverride: "anthropic",
+          modelOverride: "claude-opus-4-1",
+          modelProvider: "openai",
+          model: "gpt-test-a",
+        },
+      },
+    });
+
+    const { ws } = await openClient();
+    const reset = await rpcReq<{
+      ok: true;
+      key: string;
+      entry: {
+        providerOverride?: string;
+        modelOverride?: string;
+        modelOverrideSource?: string;
+        modelProvider?: string;
+        model?: string;
+      };
+    }>(ws, "sessions.reset", { key: "main" });
+
+    expect(reset.ok).toBe(true);
+    expect(reset.payload?.entry.providerOverride).toBe("anthropic");
+    expect(reset.payload?.entry.modelOverride).toBe("claude-opus-4-1");
+    expect(reset.payload?.entry.modelOverrideSource).toBe("user");
+    expect(reset.payload?.entry.modelProvider).toBe("anthropic");
+    expect(reset.payload?.entry.model).toBe("claude-opus-4-1");
+
+    const store = JSON.parse(await fs.readFile(storePath, "utf-8")) as Record<
+      string,
+      {
+        providerOverride?: string;
+        modelOverride?: string;
+        modelOverrideSource?: string;
+        modelProvider?: string;
+        model?: string;
+      }
+    >;
+    expect(store["agent:main:main"]?.providerOverride).toBe("anthropic");
+    expect(store["agent:main:main"]?.modelOverride).toBe("claude-opus-4-1");
+    expect(store["agent:main:main"]?.modelOverrideSource).toBe("user");
+    expect(store["agent:main:main"]?.modelProvider).toBe("anthropic");
+    expect(store["agent:main:main"]?.model).toBe("claude-opus-4-1");
+
+    ws.close();
+  });
+
+  test("sessions.reset clears fallback-pinned model overrides and restores the selected model", async () => {
+    const { storePath } = await createSessionStoreDir();
+    testState.agentConfig = {
+      model: {
+        primary: "openai/gpt-test-a",
+      },
+    };
+
+    await writeSessionStore({
+      entries: {
+        main: {
+          sessionId: "sess-fallback-model-override",
+          updatedAt: Date.now(),
+          providerOverride: "anthropic",
+          modelOverride: "claude-opus-4-1",
+          modelOverrideSource: "auto",
+          fallbackNoticeSelectedModel: "openai/gpt-test-a",
+          fallbackNoticeActiveModel: "anthropic/claude-opus-4-1",
+          fallbackNoticeReason: "rate limit",
+        },
+      },
+    });
+
+    const { ws } = await openClient();
+    const reset = await rpcReq<{
+      ok: true;
+      key: string;
+      entry: {
+        providerOverride?: string;
+        modelOverride?: string;
+        modelProvider?: string;
+        model?: string;
+      };
+    }>(ws, "sessions.reset", { key: "main" });
+
+    expect(reset.ok).toBe(true);
+    expect(reset.payload?.entry.providerOverride).toBeUndefined();
+    expect(reset.payload?.entry.modelOverride).toBeUndefined();
+    expect(reset.payload?.entry.modelProvider).toBe("openai");
+    expect(reset.payload?.entry.model).toBe("gpt-test-a");
+
+    const store = JSON.parse(await fs.readFile(storePath, "utf-8")) as Record<
+      string,
+      {
+        providerOverride?: string;
+        modelOverride?: string;
+        modelProvider?: string;
+        model?: string;
+      }
+    >;
+    expect(store["agent:main:main"]?.providerOverride).toBeUndefined();
+    expect(store["agent:main:main"]?.modelOverride).toBeUndefined();
+    expect(store["agent:main:main"]?.modelProvider).toBe("openai");
+    expect(store["agent:main:main"]?.model).toBe("gpt-test-a");
+
+    ws.close();
+  });
+
+  test("sessions.reset follows the updated default after an auto fallback pinned an older default", async () => {
+    const { storePath } = await createSessionStoreDir();
+    testState.agentConfig = {
+      model: {
+        primary: "openai/gpt-test-c",
+      },
+    };
+
+    await writeSessionStore({
+      entries: {
+        main: {
+          sessionId: "sess-fallback-stale-default",
+          updatedAt: Date.now(),
+          providerOverride: "anthropic",
+          modelOverride: "claude-opus-4-1",
+          modelOverrideSource: "auto",
+          fallbackNoticeSelectedModel: "openai/gpt-test-a",
+          fallbackNoticeActiveModel: "anthropic/claude-opus-4-1",
+          fallbackNoticeReason: "rate limit",
+        },
+      },
+    });
+
+    const { ws } = await openClient();
+    const reset = await rpcReq<{
+      ok: true;
+      key: string;
+      entry: {
+        providerOverride?: string;
+        modelOverride?: string;
+        modelProvider?: string;
+        model?: string;
+      };
+    }>(ws, "sessions.reset", { key: "main" });
+
+    expect(reset.ok).toBe(true);
+    expect(reset.payload?.entry.providerOverride).toBeUndefined();
+    expect(reset.payload?.entry.modelOverride).toBeUndefined();
+    expect(reset.payload?.entry.modelProvider).toBe("openai");
+    expect(reset.payload?.entry.model).toBe("gpt-test-c");
+
+    const store = JSON.parse(await fs.readFile(storePath, "utf-8")) as Record<
+      string,
+      {
+        providerOverride?: string;
+        modelOverride?: string;
+        modelProvider?: string;
+        model?: string;
+      }
+    >;
+    expect(store["agent:main:main"]?.providerOverride).toBeUndefined();
+    expect(store["agent:main:main"]?.modelOverride).toBeUndefined();
+    expect(store["agent:main:main"]?.modelProvider).toBe("openai");
+    expect(store["agent:main:main"]?.model).toBe("gpt-test-c");
+
+    ws.close();
+  });
+
   test("sessions.reset preserves spawned session ownership metadata", async () => {
     const { storePath } = await createSessionStoreDir();
     const customSessionFile = path.join(
@@ -1595,6 +1771,7 @@ describe("gateway server sessions", () => {
           ttsAuto: "always",
           providerOverride: "anthropic",
           modelOverride: "claude-opus-4-1",
+          modelOverrideSource: "user",
           authProfileOverride: "work",
           authProfileOverrideSource: "user",
           authProfileOverrideCompactionCount: 7,
@@ -2169,6 +2346,7 @@ describe("gateway server sessions", () => {
     expect(acpManagerMocks.closeSession).toHaveBeenCalledWith({
       allowBackendUnavailable: true,
       cfg: expect.any(Object),
+      discardPersistentState: true,
       requireAcpSession: false,
       reason: "session-delete",
       sessionKey: "agent:main:discord:group:dev",
@@ -2411,6 +2589,13 @@ describe("gateway server sessions", () => {
   test("sessions.reset closes ACP runtime handles for ACP sessions", async () => {
     const { dir, storePath } = await createSessionStoreDir();
     await writeSingleLineSession(dir, "sess-main", "hello");
+    const prepareFreshSession = vi.fn(async () => {});
+    acpRuntimeMocks.getAcpRuntimeBackend.mockReturnValue({
+      id: "acpx",
+      runtime: {
+        prepareFreshSession,
+      },
+    });
 
     await writeSessionStore({
       entries: {
@@ -2421,6 +2606,13 @@ describe("gateway server sessions", () => {
             backend: "acpx",
             agent: "codex",
             runtimeSessionName: "runtime:reset",
+            identity: {
+              state: "resolved",
+              acpxRecordId: "agent:main:main",
+              acpxSessionId: "backend-session-1",
+              source: "status",
+              lastUpdatedAt: Date.now(),
+            },
             mode: "persistent",
             runtimeOptions: {
               runtimeMode: "auto",
@@ -2442,6 +2634,11 @@ describe("gateway server sessions", () => {
           backend?: string;
           agent?: string;
           runtimeSessionName?: string;
+          identity?: {
+            state?: string;
+            acpxRecordId?: string;
+            acpxSessionId?: string;
+          };
           mode?: string;
           runtimeOptions?: {
             runtimeMode?: string;
@@ -2459,6 +2656,10 @@ describe("gateway server sessions", () => {
       backend: "acpx",
       agent: "codex",
       runtimeSessionName: "runtime:reset",
+      identity: {
+        state: "pending",
+        acpxRecordId: "agent:main:main",
+      },
       mode: "persistent",
       runtimeOptions: {
         runtimeMode: "auto",
@@ -2467,11 +2668,16 @@ describe("gateway server sessions", () => {
       cwd: "/tmp/acp-session",
       state: "idle",
     });
+    expect(reset.payload?.entry.acp?.identity?.acpxSessionId).toBeUndefined();
     expect(acpManagerMocks.closeSession).toHaveBeenCalledWith({
       allowBackendUnavailable: true,
       cfg: expect.any(Object),
+      discardPersistentState: true,
       requireAcpSession: false,
       reason: "session-reset",
+      sessionKey: "agent:main:main",
+    });
+    expect(prepareFreshSession).toHaveBeenCalledWith({
       sessionKey: "agent:main:main",
     });
     const store = JSON.parse(await fs.readFile(storePath, "utf-8")) as Record<
@@ -2481,6 +2687,11 @@ describe("gateway server sessions", () => {
           backend?: string;
           agent?: string;
           runtimeSessionName?: string;
+          identity?: {
+            state?: string;
+            acpxRecordId?: string;
+            acpxSessionId?: string;
+          };
           mode?: string;
           runtimeOptions?: {
             runtimeMode?: string;
@@ -2495,6 +2706,10 @@ describe("gateway server sessions", () => {
       backend: "acpx",
       agent: "codex",
       runtimeSessionName: "runtime:reset",
+      identity: {
+        state: "pending",
+        acpxRecordId: "agent:main:main",
+      },
       mode: "persistent",
       runtimeOptions: {
         runtimeMode: "auto",
@@ -2503,6 +2718,7 @@ describe("gateway server sessions", () => {
       cwd: "/tmp/acp-session",
       state: "idle",
     });
+    expect(store["agent:main:main"]?.acp?.identity?.acpxSessionId).toBeUndefined();
 
     ws.close();
   });

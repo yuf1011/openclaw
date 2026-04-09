@@ -68,7 +68,6 @@ setCliRunnerExecuteTestDeps({
 setCliRunnerPrepareTestDeps({
   makeBootstrapWarn: () => () => {},
   resolveBootstrapContextForRun: hoisted.resolveBootstrapContextForRunMock,
-  resolveHeartbeatPrompt: async () => "",
   resolveOpenClawDocsPath: async () => null,
 });
 
@@ -107,6 +106,8 @@ type ManagedRunMock = {
 function buildOpenAICodexCliBackendFixture(): CliBackendPlugin {
   return {
     id: "codex-cli",
+    bundleMcp: true,
+    bundleMcpMode: "codex-config-overrides",
     config: {
       command: "codex",
       args: [
@@ -134,6 +135,9 @@ function buildOpenAICodexCliBackendFixture(): CliBackendPlugin {
       modelArg: "--model",
       sessionIdFields: ["thread_id"],
       sessionMode: "existing",
+      systemPromptFileConfigArg: "-c",
+      systemPromptFileConfigKey: "model_instructions_file",
+      systemPromptWhen: "first",
       imageArg: "--image",
       imageMode: "repeat",
       reliability: {
@@ -188,6 +192,7 @@ function buildAnthropicCliBackendFixture(): CliBackendPlugin {
   return {
     id: "claude-cli",
     bundleMcp: true,
+    bundleMcpMode: "claude-config-file",
     config: {
       command: "claude",
       args: [
@@ -249,12 +254,16 @@ function buildAnthropicCliBackendFixture(): CliBackendPlugin {
 function buildGoogleGeminiCliBackendFixture(): CliBackendPlugin {
   return {
     id: "google-gemini-cli",
+    bundleMcp: true,
+    bundleMcpMode: "gemini-system-settings",
     config: {
       command: "gemini",
-      args: ["--prompt", "--output-format", "json"],
-      resumeArgs: ["--resume", "{sessionId}", "--prompt", "--output-format", "json"],
+      args: ["--output-format", "json", "--prompt", "{prompt}"],
+      resumeArgs: ["--resume", "{sessionId}", "--output-format", "json", "--prompt", "{prompt}"],
       output: "json",
       input: "arg",
+      imageArg: "@",
+      imagePathScope: "workspace",
       modelArg: "--model",
       modelAliases: {
         pro: "gemini-3.1-pro-preview",
@@ -321,6 +330,12 @@ export const EXISTING_CODEX_CONFIG = {
 } satisfies OpenClawConfig;
 
 export async function setupCliRunnerTestModule() {
+  setupCliRunnerTestRegistry();
+  cliRunnerModulePromise ??= import("./cli-runner.js");
+  return (await cliRunnerModulePromise).runCliAgent;
+}
+
+export function setupCliRunnerTestRegistry() {
   const registry = createEmptyPluginRegistry();
   registry.cliBackends = [
     {
@@ -347,8 +362,6 @@ export async function setupCliRunnerTestModule() {
     bootstrapFiles: [],
     contextFiles: [],
   });
-  cliRunnerModulePromise ??= import("./cli-runner.js");
-  return (await cliRunnerModulePromise).runCliAgent;
 }
 
 export async function setupClaudeCliRunnerTestModule() {
@@ -371,7 +384,6 @@ export function restoreCliRunnerPrepareTestDeps() {
   setCliRunnerPrepareTestDeps({
     makeBootstrapWarn: () => () => {},
     resolveBootstrapContextForRun: hoisted.resolveBootstrapContextForRunMock,
-    resolveHeartbeatPrompt: async () => "",
     resolveOpenClawDocsPath: async () => null,
   });
 }
