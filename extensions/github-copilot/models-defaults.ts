@@ -9,6 +9,7 @@ const DEFAULT_MAX_TOKENS = 8192;
 // return an error and users can remove it from their config.
 const DEFAULT_MODEL_IDS = [
   "gpt-5.4",
+  "claude-opus-4.6",
   "claude-sonnet-4.6",
   "claude-sonnet-4.5",
   "gpt-4o",
