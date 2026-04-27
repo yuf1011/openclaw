@@ -114,6 +114,7 @@ describe("ollama setup", () => {
 
   it("puts suggested cloud model first in cloud mode", async () => {
     const prompter = createCloudPrompter();
+    vi.stubGlobal("fetch", createOllamaFetchMock({ tags: [] }));
     const result = await promptAndConfigureOllama({
       cfg: {},
       env: {},
@@ -130,6 +131,7 @@ describe("ollama setup", () => {
 
   it("uses generic token flags for cloud-only setup", async () => {
     const prompter = createCloudPrompter();
+    vi.stubGlobal("fetch", createOllamaFetchMock({ tags: [] }));
 
     const result = await promptAndConfigureOllama({
       cfg: {},
@@ -189,7 +191,7 @@ describe("ollama setup", () => {
 
   it("cloud mode does not hit local Ollama endpoints", async () => {
     const prompter = createCloudPrompter();
-    const fetchMock = vi.fn();
+    const fetchMock = createOllamaFetchMock({ tags: [] });
     vi.stubGlobal("fetch", fetchMock);
 
     await promptAndConfigureOllama({
@@ -199,7 +201,12 @@ describe("ollama setup", () => {
       allowSecretRefPrompt: false,
     });
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some((call) => requestUrl(call[0]).includes("127.0.0.1"))).toBe(
+      false,
+    );
+    expect(fetchMock.mock.calls.some((call) => requestUrl(call[0]).includes("ollama.com"))).toBe(
+      true,
+    );
   });
 
   it("rejects the local marker during cloud-only setup", async () => {
@@ -250,6 +257,7 @@ describe("ollama setup", () => {
       }),
       note: vi.fn(async () => undefined),
     } as unknown as WizardPrompter;
+    vi.stubGlobal("fetch", createOllamaFetchMock({ tags: [] }));
 
     await promptAndConfigureOllama({
       cfg: {},
@@ -315,8 +323,9 @@ describe("ollama setup", () => {
     );
   });
 
-  it("cloud mode seeds the hosted cloud model list", async () => {
+  it("cloud mode falls back to the hardcoded cloud model list when /api/tags is empty", async () => {
     const prompter = createCloudPrompter();
+    vi.stubGlobal("fetch", createOllamaFetchMock({ tags: [] }));
     const result = await promptAndConfigureOllama({
       cfg: {},
       env: {},
@@ -331,6 +340,36 @@ describe("ollama setup", () => {
       "text",
       "image",
     ]);
+  });
+
+  it("cloud mode populates models from ollama.com /api/tags when reachable", async () => {
+    const prompter = createCloudPrompter();
+    const fetchMock = createOllamaFetchMock({
+      tags: ["qwen3-coder:480b-cloud", "gpt-oss:120b-cloud"],
+      show: { "qwen3-coder:480b-cloud": 262144 },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await promptAndConfigureOllama({
+      cfg: {},
+      env: {},
+      prompter,
+      allowSecretRefPrompt: false,
+    });
+    const models = result.config.models?.providers?.ollama?.models;
+    const modelIds = models?.map((m) => m.id);
+
+    expect(modelIds).toEqual([
+      "kimi-k2.5:cloud",
+      "minimax-m2.7:cloud",
+      "glm-5.1:cloud",
+      "qwen3-coder:480b-cloud",
+      "gpt-oss:120b-cloud",
+    ]);
+    expect(models?.find((m) => m.id === "qwen3-coder:480b-cloud")?.contextWindow).toBe(262144);
+    expect(
+      fetchMock.mock.calls.some((call) => requestUrl(call[0]) === "https://ollama.com/api/tags"),
+    ).toBe(true);
   });
 
   it("uses /api/show context windows when building Ollama model configs", async () => {
@@ -359,25 +398,77 @@ describe("ollama setup", () => {
 
   describe("ensureOllamaModelPulled", () => {
     it("pulls model when not available locally", async () => {
-      const progress = { update: vi.fn(), stop: vi.fn() };
-      const prompter = {
-        progress: vi.fn(() => progress),
-      } as unknown as WizardPrompter;
+      vi.useFakeTimers();
+      try {
+        const progress = { update: vi.fn(), stop: vi.fn() };
+        const prompter = {
+          progress: vi.fn(() => progress),
+        } as unknown as WizardPrompter;
 
-      const fetchMock = createOllamaFetchMock({
-        tags: ["llama3:8b"],
-        pullResponse: new Response('{"status":"success"}\n', { status: 200 }),
-      });
-      vi.stubGlobal("fetch", fetchMock);
+        const fetchMock = createOllamaFetchMock({
+          tags: ["llama3:8b"],
+          pullResponse: new Response('{"status":"success"}\n', { status: 200 }),
+        });
+        vi.stubGlobal("fetch", fetchMock);
 
-      await ensureOllamaModelPulled({
-        config: createDefaultOllamaConfig("ollama/gemma4"),
-        model: "ollama/gemma4",
-        prompter,
-      });
+        await ensureOllamaModelPulled({
+          config: createDefaultOllamaConfig("ollama/gemma4"),
+          model: "ollama/gemma4",
+          prompter,
+        });
 
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(fetchMock.mock.calls[1][0]).toContain("/api/pull");
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock.mock.calls[1][0]).toContain("/api/pull");
+        const pullInit = fetchMock.mock.calls[1][1];
+        expect(pullInit?.signal).toBeInstanceOf(AbortSignal);
+        expect(pullInit?.signal?.aborted).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(pullInit?.signal?.aborted).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("fails stalled model pull streams after an idle timeout", async () => {
+      vi.useFakeTimers();
+      try {
+        const progress = { update: vi.fn(), stop: vi.fn() };
+        const prompter = {
+          progress: vi.fn(() => progress),
+        } as unknown as WizardPrompter;
+        const fetchMock = vi.fn(async (input: string | URL | Request) => {
+          const url = requestUrl(input);
+          if (url.endsWith("/api/tags")) {
+            return jsonResponse({ models: [] });
+          }
+          if (url.endsWith("/api/pull")) {
+            return new Response(new ReadableStream<Uint8Array>(), { status: 200 });
+          }
+          throw new Error(`Unexpected fetch: ${url}`);
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const pullPromise = ensureOllamaModelPulled({
+          config: createDefaultOllamaConfig("ollama/gemma4"),
+          model: "ollama/gemma4",
+          prompter,
+        }).catch((err: unknown) => err);
+
+        for (let attempts = 0; attempts < 50 && fetchMock.mock.calls.length < 2; attempts += 1) {
+          await vi.advanceTimersByTimeAsync(0);
+          await Promise.resolve();
+        }
+        expect(fetchMock.mock.calls[1]?.[0]).toContain("/api/pull");
+
+        await vi.advanceTimersByTimeAsync(300_000);
+        await expect(pullPromise).resolves.toEqual(
+          expect.objectContaining({ message: "Failed to download selected Ollama model" }),
+        );
+        expect(progress.stop).toHaveBeenCalledWith(expect.stringContaining("Ollama pull stalled"));
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("skips pull when model is already available", async () => {
@@ -393,6 +484,38 @@ describe("ollama setup", () => {
       });
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("uses baseURL alias when checking and pulling models", async () => {
+      const progress = { update: vi.fn(), stop: vi.fn() };
+      const prompter = {
+        progress: vi.fn(() => progress),
+      } as unknown as WizardPrompter;
+
+      const fetchMock = createOllamaFetchMock({
+        tags: [],
+        pullResponse: new Response('{"status":"success"}\n', { status: 200 }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await ensureOllamaModelPulled({
+        config: {
+          agents: { defaults: { model: { primary: "ollama/gemma4" } } },
+          models: {
+            providers: {
+              ollama: {
+                baseURL: "http://127.0.0.1:11435",
+                models: [],
+              } as never,
+            },
+          },
+        },
+        model: "ollama/gemma4",
+        prompter,
+      });
+
+      expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:11435/api/tags");
+      expect(fetchMock.mock.calls[1]?.[0]).toBe("http://127.0.0.1:11435/api/pull");
     });
 
     it("skips pull for cloud models", async () => {

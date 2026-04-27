@@ -6,8 +6,6 @@ read_when:
 title: "Compaction"
 ---
 
-# Compaction
-
 Every model has a context window -- the maximum number of tokens it can process.
 When a conversation approaches that limit, OpenClaw **compacts** older messages
 into a summary so the chat can continue.
@@ -114,6 +112,27 @@ the summary:
 ```
 /compact Focus on the API design decisions
 ```
+
+When `agents.defaults.compaction.keepRecentTokens` is set, manual compaction
+honors that Pi cut-point and keeps the recent tail in rebuilt context. Without
+an explicit keep budget, manual compaction behaves as a hard checkpoint and
+continues from the new summary alone.
+
+When `agents.defaults.compaction.truncateAfterCompaction` is enabled,
+OpenClaw does not rewrite the existing transcript in place. It creates a new
+active successor transcript from the compaction summary, preserved state, and
+unsummarized tail, then keeps the previous JSONL as the archived checkpoint
+source.
+
+When `agents.defaults.compaction.maxActiveTranscriptBytes` is set, OpenClaw can
+trigger normal local compaction before a run if the active JSONL reaches that
+size. This is useful for long-running sessions where provider-side context
+management may keep model context healthy while the local transcript keeps
+growing. It does not split raw JSONL bytes; it only asks the normal compaction
+pipeline to create a semantic summary. Combine it with
+`truncateAfterCompaction: true` to move future turns onto the smaller successor
+transcript; without transcript rotation, the byte guard remains inactive because
+the active file would not shrink.
 
 ## Using a different model
 
