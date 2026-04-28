@@ -127,12 +127,15 @@ Live tests are split into two layers so we can isolate failures:
     - Embedded agent forwards a multimodal user message to the model
     - Assertion: reply contains `cat` + the code (OCR tolerance: minor mistakes allowed)
 
-Tip: to see what you can test on your machine (and the exact `provider/model` ids), run:
+<Tip>
+To see what you can test on your machine (and the exact `provider/model` ids), run:
 
 ```bash
 openclaw models list
 openclaw models list --json
 ```
+
+</Tip>
 
 ## Live: CLI backend smoke (Claude, Codex, Gemini, or other local CLIs)
 
@@ -413,7 +416,9 @@ More providers you can include in the live matrix (if you have creds/config):
 - Built-in: `openai`, `openai-codex`, `anthropic`, `google`, `google-vertex`, `google-antigravity`, `google-gemini-cli`, `zai`, `openrouter`, `opencode`, `opencode-go`, `xai`, `groq`, `cerebras`, `mistral`, `github-copilot`
 - Via `models.providers` (custom endpoints): `minimax` (cloud/API), plus any OpenAI/Anthropic-compatible proxy (LM Studio, vLLM, LiteLLM, etc.)
 
-Tip: don’t try to hardcode “all models” in docs. The authoritative list is whatever `discoverModels(...)` returns on your machine + whatever keys are available.
+<Tip>
+Do not hardcode "all models" in docs. The authoritative list is whatever `discoverModels(...)` returns on your machine plus whatever keys are available.
+</Tip>
 
 ## Credentials (never commit)
 
@@ -463,6 +468,7 @@ If you want to rely on env keys (e.g. exported in your `~/.profile`), run local 
     - `<provider>:generate`
     - `<provider>:edit` when the provider declares edit support
 - Current bundled providers covered:
+  - `deepinfra`
   - `fal`
   - `google`
   - `minimax`
@@ -472,6 +478,7 @@ If you want to rely on env keys (e.g. exported in your `~/.profile`), run local 
   - `xai`
 - Optional narrowing:
   - `OPENCLAW_LIVE_IMAGE_GENERATION_PROVIDERS="openai,google,openrouter,xai"`
+  - `OPENCLAW_LIVE_IMAGE_GENERATION_PROVIDERS="deepinfra"`
   - `OPENCLAW_LIVE_IMAGE_GENERATION_MODELS="openai/gpt-image-2,google/gemini-3.1-flash-image-preview,openrouter/google/gemini-3.1-flash-image-preview,xai/grok-imagine-image"`
   - `OPENCLAW_LIVE_IMAGE_GENERATION_CASES="google:flash-generate,google:pro-edit,openrouter:generate,xai:default-generate,xai:default-edit"`
 - Optional auth behavior:
@@ -546,7 +553,7 @@ image-generation runtime, and the live provider request.
     - `google` because the current shared Gemini/Veo lane uses local buffer-backed input and that path is not accepted in the shared sweep
     - `openai` because the current shared lane lacks org-specific video inpaint/remix access guarantees
 - Optional narrowing:
-  - `OPENCLAW_LIVE_VIDEO_GENERATION_PROVIDERS="google,openai,runway"`
+  - `OPENCLAW_LIVE_VIDEO_GENERATION_PROVIDERS="deepinfra,google,openai,runway"`
   - `OPENCLAW_LIVE_VIDEO_GENERATION_MODELS="google/veo-3.1-fast-generate-preview,openai/sora-2,runway/gen4_aleph"`
   - `OPENCLAW_LIVE_VIDEO_GENERATION_SKIP_PROVIDERS=""` to include every provider in the default sweep, including FAL
   - `OPENCLAW_LIVE_VIDEO_GENERATION_TIMEOUT_MS=60000` to reduce each provider operation cap for an aggressive smoke run

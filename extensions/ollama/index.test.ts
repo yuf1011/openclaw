@@ -1,5 +1,5 @@
+import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestPluginApi } from "../../test/helpers/plugins/plugin-api.js";
 import plugin from "./index.js";
 
 const promptAndConfigureOllamaMock = vi.hoisted(() =>
@@ -366,6 +366,115 @@ describe("ollama plugin", () => {
     });
     expect(buildOllamaProviderMock).toHaveBeenCalledWith(undefined, {
       quiet: true,
+    });
+  });
+
+  it("resolves dynamic local models from Ollama without generating PI models.json", async () => {
+    const provider = registerProvider();
+    const previous = process.env.OLLAMA_API_KEY;
+    process.env.OLLAMA_API_KEY = "ollama-local";
+    buildOllamaProviderMock.mockResolvedValueOnce({
+      baseUrl: "http://127.0.0.1:11434",
+      api: "ollama",
+      models: [
+        {
+          id: "llama3.2:latest",
+          name: "llama3.2:latest",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 8192,
+          maxTokens: 2048,
+        },
+      ],
+    });
+
+    try {
+      await provider.prepareDynamicModel?.({
+        config: {},
+        provider: "ollama",
+        modelId: "llama3.2:latest",
+        modelRegistry: { find: vi.fn(() => null) },
+      } as never);
+
+      expect(
+        provider.resolveDynamicModel?.({
+          config: {},
+          provider: "ollama",
+          modelId: "llama3.2:latest",
+          modelRegistry: { find: vi.fn(() => null) },
+        } as never),
+      ).toMatchObject({
+        provider: "ollama",
+        id: "llama3.2:latest",
+        api: "ollama",
+        baseUrl: "http://127.0.0.1:11434",
+      });
+      expect(buildOllamaProviderMock).toHaveBeenCalledWith(undefined, { quiet: true });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.OLLAMA_API_KEY;
+      } else {
+        process.env.OLLAMA_API_KEY = previous;
+      }
+    }
+  });
+
+  it("skips implicit localhost discovery when a custom remote Ollama provider is configured", async () => {
+    const provider = registerProvider();
+
+    const result = await provider.discovery.run({
+      config: {
+        models: {
+          providers: {
+            "ollama-cloud": {
+              api: "ollama",
+              baseUrl: "https://ollama.com",
+              models: [{ id: "kimi-k2.5", name: "Kimi K2.5" }],
+            },
+          },
+        },
+      },
+      env: { NODE_ENV: "development", OLLAMA_API_KEY: "ollama-live" },
+      resolveProviderApiKey: () => ({ apiKey: "ollama-live" }),
+    } as never);
+
+    expect(result).toBeNull();
+    expect(buildOllamaProviderMock).not.toHaveBeenCalled();
+  });
+
+  it("treats custom 127/8 Ollama providers as loopback for implicit discovery", async () => {
+    const provider = registerProvider();
+    buildOllamaProviderMock.mockResolvedValueOnce({
+      baseUrl: "http://127.0.0.1:11434",
+      api: "ollama",
+      models: [],
+    });
+
+    const result = await provider.discovery.run({
+      config: {
+        models: {
+          providers: {
+            "ollama-alt-local": {
+              api: "ollama",
+              baseUrl: "http://127.0.0.2:11434",
+              models: [{ id: "llama3.2", name: "Llama 3.2" }],
+            },
+          },
+        },
+      },
+      env: { NODE_ENV: "development", OLLAMA_API_KEY: "ollama-live" },
+      resolveProviderApiKey: () => ({ apiKey: "ollama-live" }),
+    } as never);
+
+    expect(result).toMatchObject({
+      provider: {
+        baseUrl: "http://127.0.0.1:11434",
+        api: "ollama",
+      },
+    });
+    expect(buildOllamaProviderMock).toHaveBeenCalledWith(undefined, {
+      quiet: false,
     });
   });
 
