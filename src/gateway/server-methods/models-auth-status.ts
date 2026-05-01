@@ -7,7 +7,10 @@ import {
   buildAuthHealthSummary,
   formatRemainingShort,
 } from "../../agents/auth-health.js";
-import { ensureAuthProfileStore } from "../../agents/auth-profiles.js";
+import {
+  ensureAuthProfileStore,
+  externalCliDiscoveryForConfigStatus,
+} from "../../agents/auth-profiles.js";
 import { normalizeProviderId } from "../../agents/provider-id.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { isSecretRef } from "../../config/types.secrets.js";
@@ -292,7 +295,9 @@ export const modelsAuthStatusHandlers: GatewayRequestHandlers = {
     try {
       const cfg = context.getRuntimeConfig();
       const agentDir = resolveOpenClawAgentDir();
-      const store = ensureAuthProfileStore(agentDir);
+      const store = ensureAuthProfileStore(agentDir, {
+        externalCli: externalCliDiscoveryForConfigStatus({ cfg }),
+      });
       const configured = resolveConfiguredProviders(cfg);
       const authHealth: AuthHealthSummary = buildAuthHealthSummary({
         store,

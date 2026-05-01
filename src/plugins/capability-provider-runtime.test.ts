@@ -67,7 +67,6 @@ vi.mock("./bundled-compat.js", () => ({
 
 let resolvePluginCapabilityProviders: typeof import("./capability-provider-runtime.js").resolvePluginCapabilityProviders;
 let resolvePluginCapabilityProvider: typeof import("./capability-provider-runtime.js").resolvePluginCapabilityProvider;
-let clearCapabilityProviderPluginIdCacheForTests: typeof import("./capability-provider-runtime.js").__testing.clearCapabilityProviderPluginIdCacheForTests;
 
 function expectResolvedCapabilityProviderIds(providers: Array<{ id: string }>, expected: string[]) {
   expect(providers.map((provider) => provider.id)).toEqual(expected);
@@ -102,6 +101,7 @@ function expectBundledCompatLoadPath(params: {
   });
   expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith({
     config: params.enablementCompat,
+    onlyPluginIds: ["openai"],
     activate: false,
   });
 }
@@ -122,13 +122,17 @@ function createCompatChainConfig() {
   return { cfg, allowlistCompat, enablementCompat };
 }
 
-function setBundledCapabilityFixture(contractKey: string) {
+function setBundledCapabilityFixture(
+  contractKey: string,
+  pluginId = "openai",
+  providerId = pluginId,
+) {
   mocks.loadPluginManifestRegistry.mockReturnValue({
     plugins: [
       {
-        id: "openai",
+        id: pluginId,
         origin: "bundled",
-        contracts: { [contractKey]: ["openai"] },
+        contracts: { [contractKey]: [providerId] },
       },
       {
         id: "custom-plugin",
@@ -171,15 +175,11 @@ function expectCompatChainApplied(params: {
 
 describe("resolvePluginCapabilityProviders", () => {
   beforeAll(async () => {
-    ({
-      resolvePluginCapabilityProvider,
-      resolvePluginCapabilityProviders,
-      __testing: { clearCapabilityProviderPluginIdCacheForTests },
-    } = await import("./capability-provider-runtime.js"));
+    ({ resolvePluginCapabilityProvider, resolvePluginCapabilityProviders } =
+      await import("./capability-provider-runtime.js"));
   });
 
   beforeEach(() => {
-    clearCapabilityProviderPluginIdCacheForTests();
     mocks.resolveRuntimePluginRegistry.mockReset();
     mocks.resolveRuntimePluginRegistry.mockReturnValue(undefined);
     mocks.resolvePluginRegistryLoadCacheKey.mockReset();
@@ -234,7 +234,7 @@ describe("resolvePluginCapabilityProviders", () => {
     expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith();
   });
 
-  it("uses active non-speech capability providers even when cfg is passed", () => {
+  it("uses active non-speech capability providers even when cfg has explicit plugin entries", () => {
     const active = createEmptyPluginRegistry();
     active.mediaUnderstandingProviders.push({
       pluginId: "deepgram",
@@ -250,6 +250,7 @@ describe("resolvePluginCapabilityProviders", () => {
     const providers = resolvePluginCapabilityProviders({
       key: "mediaUnderstandingProviders",
       cfg: {
+        plugins: { entries: { deepgram: { enabled: true } } },
         tools: {
           media: {
             models: [{ provider: "deepgram" }],
@@ -405,6 +406,7 @@ describe("resolvePluginCapabilityProviders", () => {
           allow: ["openai", "microsoft"],
         }),
       }),
+      onlyPluginIds: ["microsoft"],
       activate: false,
     });
   });
@@ -578,6 +580,7 @@ describe("resolvePluginCapabilityProviders", () => {
     expectNoResolvedCapabilityProviders(providers);
     expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith({
       config: expect.anything(),
+      onlyPluginIds: [],
       activate: false,
     });
   });
@@ -605,7 +608,7 @@ describe("resolvePluginCapabilityProviders", () => {
         nativeDocumentInputs: ["pdf"],
       },
     } as never);
-    setBundledCapabilityFixture("mediaUnderstandingProviders");
+    setBundledCapabilityFixture("mediaUnderstandingProviders", "google", "google");
     mocks.withBundledPluginEnablementCompat.mockReturnValue(compatConfig);
     mocks.withBundledPluginVitestCompat.mockReturnValue(compatConfig);
     mocks.resolveRuntimePluginRegistry.mockImplementation((params?: unknown) =>
@@ -621,8 +624,238 @@ describe("resolvePluginCapabilityProviders", () => {
     });
     expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith({
       config: compatConfig,
+      onlyPluginIds: ["google"],
       activate: false,
     });
+  });
+
+  it("honors explicit bundled runtime dependency install opt-out for fallback snapshots", () => {
+    const cfg = { plugins: { allow: ["custom-plugin"] } } as OpenClawConfig;
+    const enablementCompat = {
+      plugins: {
+        allow: ["custom-plugin", "openai"],
+        entries: { openai: { enabled: true } },
+      },
+    };
+    setBundledCapabilityFixture("mediaUnderstandingProviders");
+    mocks.withBundledPluginEnablementCompat.mockReturnValue(enablementCompat);
+    mocks.withBundledPluginVitestCompat.mockReturnValue(enablementCompat);
+
+    expectNoResolvedCapabilityProviders(
+      resolvePluginCapabilityProviders({
+        key: "mediaUnderstandingProviders",
+        cfg,
+        installBundledRuntimeDeps: false,
+      }),
+    );
+
+    expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith({
+      config: enablementCompat,
+      onlyPluginIds: ["openai"],
+      activate: false,
+      installBundledRuntimeDeps: false,
+    });
+  });
+
+  it("uses active capability providers when plugins are globally disabled", () => {
+    const cfg = { plugins: { enabled: false, allow: ["custom-plugin"] } } as OpenClawConfig;
+    const active = createEmptyPluginRegistry();
+    active.mediaUnderstandingProviders.push({
+      pluginId: "openai",
+      pluginName: "openai",
+      source: "test",
+      provider: {
+        id: "openai",
+        capabilities: ["image"],
+      },
+    } as never);
+    mocks.resolveRuntimePluginRegistry.mockReturnValue(active);
+
+    const providers = resolvePluginCapabilityProviders({
+      key: "mediaUnderstandingProviders",
+      cfg,
+    });
+
+    expectResolvedCapabilityProviderIds(providers, ["openai"]);
+    expect(mocks.loadPluginManifestRegistry).not.toHaveBeenCalled();
+    expect(mocks.withBundledPluginAllowlistCompat).not.toHaveBeenCalled();
+    expect(mocks.withBundledPluginEnablementCompat).not.toHaveBeenCalled();
+    expect(mocks.withBundledPluginVitestCompat).not.toHaveBeenCalled();
+    expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith();
+  });
+
+  it("loads bundled speech providers through compat when plugins are globally disabled", () => {
+    const cfg = {
+      plugins: { enabled: false },
+      messages: { tts: { provider: "mistral" } },
+    } as OpenClawConfig;
+    const allowlistCompat = {
+      ...cfg,
+      plugins: {
+        enabled: false,
+        allow: ["microsoft"],
+      },
+    } as OpenClawConfig;
+    const compatConfig = {
+      ...cfg,
+      plugins: {
+        enabled: true,
+        allow: ["microsoft"],
+        entries: { microsoft: { enabled: true } },
+      },
+    } as OpenClawConfig;
+    const loaded = createEmptyPluginRegistry();
+    loaded.speechProviders.push({
+      pluginId: "microsoft",
+      pluginName: "microsoft",
+      source: "test",
+      provider: {
+        id: "microsoft",
+        label: "microsoft",
+        aliases: ["edge"],
+        isConfigured: () => true,
+        synthesize: async () => ({
+          audioBuffer: Buffer.from("x"),
+          outputFormat: "mp3",
+          voiceCompatible: false,
+          fileExtension: ".mp3",
+        }),
+      },
+    } as never);
+    mocks.loadPluginManifestRegistry.mockReturnValue({
+      plugins: [
+        {
+          id: "microsoft",
+          origin: "bundled",
+          contracts: { speechProviders: ["microsoft"] },
+        },
+      ] as never,
+      diagnostics: [],
+    });
+    mocks.withBundledPluginEnablementCompat.mockReturnValue(compatConfig);
+    mocks.withBundledPluginVitestCompat.mockReturnValue(compatConfig);
+    mocks.resolveRuntimePluginRegistry.mockImplementation((params?: unknown) =>
+      params === undefined ? undefined : loaded,
+    );
+
+    const providers = resolvePluginCapabilityProviders({
+      key: "speechProviders",
+      cfg,
+    });
+
+    expectResolvedCapabilityProviderIds(providers, ["microsoft"]);
+    expect(mocks.loadPluginManifestRegistry).toHaveBeenCalledWith({
+      config: cfg,
+      env: process.env,
+    });
+    expect(mocks.withBundledPluginAllowlistCompat).toHaveBeenCalledWith({
+      config: cfg,
+      pluginIds: ["microsoft"],
+    });
+    expect(mocks.withBundledPluginEnablementCompat).toHaveBeenCalledWith({
+      config: allowlistCompat,
+      pluginIds: ["microsoft"],
+    });
+    expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith();
+    expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith({
+      config: compatConfig,
+      onlyPluginIds: ["microsoft"],
+      activate: false,
+    });
+  });
+
+  it.each([
+    "imageGenerationProviders",
+    "videoGenerationProviders",
+    "musicGenerationProviders",
+  ] as const)("uses an explicit empty plugin scope for %s when no bundled owner exists", (key) => {
+    const providers = resolvePluginCapabilityProviders({
+      key,
+      cfg: {} as OpenClawConfig,
+    });
+
+    expectNoResolvedCapabilityProviders(providers as Array<{ id: string }>);
+    expect(mocks.loadPluginManifestRegistry).toHaveBeenCalledWith({
+      config: {},
+      env: process.env,
+    });
+    expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith();
+    expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith({
+      config: expect.anything(),
+      onlyPluginIds: [],
+      activate: false,
+    });
+  });
+
+  it("scopes media capability snapshot loads to manifest-derived bundled owners", () => {
+    const cfg = { plugins: { allow: ["openai", "minimax"] } } as OpenClawConfig;
+    mocks.loadPluginManifestRegistry.mockReturnValue({
+      plugins: [
+        {
+          id: "openai",
+          origin: "bundled",
+          contracts: {
+            imageGenerationProviders: ["openai"],
+            videoGenerationProviders: ["openai"],
+          },
+        },
+        {
+          id: "minimax",
+          origin: "bundled",
+          contracts: {
+            imageGenerationProviders: ["minimax"],
+            videoGenerationProviders: ["minimax"],
+            musicGenerationProviders: ["minimax"],
+          },
+        },
+      ] as never,
+      diagnostics: [],
+    });
+
+    resolvePluginCapabilityProviders({ key: "imageGenerationProviders", cfg });
+    resolvePluginCapabilityProviders({ key: "videoGenerationProviders", cfg });
+    resolvePluginCapabilityProviders({ key: "musicGenerationProviders", cfg });
+
+    const snapshotLoadOptions = mocks.resolveRuntimePluginRegistry.mock.calls
+      .map(([options]) => options)
+      .filter((options): options is { activate: boolean; onlyPluginIds?: string[] } =>
+        Boolean(options && typeof options === "object" && "activate" in options),
+      );
+    expect(snapshotLoadOptions.map((options) => options.onlyPluginIds)).toEqual([
+      ["minimax", "openai"],
+      ["minimax", "openai"],
+      ["minimax"],
+    ]);
+  });
+
+  it("does not unscoped-load media generation capabilities without bundled owners", () => {
+    const cfg = { plugins: { allow: ["openai"] } } as OpenClawConfig;
+    mocks.loadPluginManifestRegistry.mockReturnValue({
+      plugins: [
+        {
+          id: "openai",
+          origin: "bundled",
+          contracts: {
+            imageGenerationProviders: ["openai"],
+          },
+        },
+      ] as never,
+      diagnostics: [],
+    });
+
+    expectNoResolvedCapabilityProviders(
+      resolvePluginCapabilityProviders({ key: "imageGenerationProviders", cfg }),
+    );
+    expectNoResolvedCapabilityProviders(
+      resolvePluginCapabilityProviders({ key: "musicGenerationProviders", cfg }),
+    );
+
+    const snapshotLoadOptions = mocks.resolveRuntimePluginRegistry.mock.calls
+      .map(([options]) => options)
+      .filter((options): options is { activate: boolean; onlyPluginIds?: string[] } =>
+        Boolean(options && typeof options === "object" && "activate" in options),
+      );
+    expect(snapshotLoadOptions.map((options) => options.onlyPluginIds)).toEqual([["openai"], []]);
   });
 
   it("loads only the bundled owner plugin for a targeted provider lookup", () => {
@@ -686,6 +919,76 @@ describe("resolvePluginCapabilityProviders", () => {
     });
     expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith({
       config: enablementCompat,
+      onlyPluginIds: ["google"],
+      activate: false,
+    });
+  });
+
+  it("loads targeted bundled capability providers through compat when plugins are globally disabled", () => {
+    const cfg = { plugins: { enabled: false, allow: ["custom-plugin"] } } as OpenClawConfig;
+    const allowlistCompat = {
+      plugins: {
+        enabled: false,
+        allow: ["custom-plugin", "google"],
+      },
+    } as OpenClawConfig;
+    const enablementCompat = {
+      plugins: {
+        enabled: true,
+        allow: ["custom-plugin", "google"],
+        entries: { google: { enabled: true } },
+      },
+    };
+    const loaded = createEmptyPluginRegistry();
+    loaded.memoryEmbeddingProviders.push({
+      pluginId: "google",
+      pluginName: "google",
+      source: "test",
+      provider: {
+        id: "gemini",
+        create: async () => ({ provider: null }),
+      },
+    } as never);
+    mocks.loadPluginManifestRegistry.mockReturnValue({
+      plugins: [
+        {
+          id: "google",
+          origin: "bundled",
+          contracts: { memoryEmbeddingProviders: ["gemini"] },
+        },
+        {
+          id: "openai",
+          origin: "bundled",
+          contracts: { memoryEmbeddingProviders: ["openai"] },
+        },
+      ] as never,
+      diagnostics: [],
+    });
+    mocks.withBundledPluginEnablementCompat.mockReturnValue(enablementCompat);
+    mocks.withBundledPluginVitestCompat.mockReturnValue(enablementCompat);
+    mocks.resolveRuntimePluginRegistry.mockImplementation((params?: unknown) =>
+      params === undefined ? undefined : loaded,
+    );
+
+    const provider = resolvePluginCapabilityProvider({
+      key: "memoryEmbeddingProviders",
+      providerId: "gemini",
+      cfg,
+    });
+
+    expect(provider?.id).toBe("gemini");
+    expect(mocks.withBundledPluginAllowlistCompat).toHaveBeenCalledWith({
+      config: cfg,
+      pluginIds: ["google"],
+    });
+    expect(mocks.withBundledPluginEnablementCompat).toHaveBeenCalledWith({
+      config: allowlistCompat,
+      pluginIds: ["google"],
+    });
+    expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith();
+    expect(mocks.resolveRuntimePluginRegistry).toHaveBeenCalledWith({
+      config: enablementCompat,
+      onlyPluginIds: ["google"],
       activate: false,
     });
   });

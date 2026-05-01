@@ -48,7 +48,7 @@ function getJiti(modulePath: string) {
 }
 
 function loadPluginDoctorContractModule(modulePath: string): PluginDoctorContractModule {
-  const nativeModule = tryNativeRequireJavaScriptModule(modulePath);
+  const nativeModule = tryNativeRequireJavaScriptModule(modulePath, { allowWindows: true });
   if (nativeModule.ok) {
     return nativeModule.moduleExport as PluginDoctorContractModule;
   }
@@ -213,7 +213,6 @@ function resolvePluginDoctorContracts(params?: {
   const manifestRegistry = loadPluginManifestRegistryForPluginRegistry({
     workspaceDir: params?.workspaceDir,
     env,
-    cache: true,
     includeDisabled: true,
   });
 

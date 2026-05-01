@@ -74,6 +74,25 @@ describe("Dockerfile", () => {
     );
   });
 
+  it("copies postinstall helper imports before pnpm install", async () => {
+    const dockerfile = await readFile(dockerfilePath, "utf8");
+    const installIndex = dockerfile.indexOf("pnpm install --frozen-lockfile");
+    const postinstallIndex = dockerfile.indexOf("COPY scripts/postinstall-bundled-plugins.mjs");
+    const runtimeDepsHelperIndex = dockerfile.indexOf(
+      "COPY scripts/lib/bundled-runtime-deps-install.mjs ./scripts/lib/bundled-runtime-deps-install.mjs",
+    );
+    const distImportHelperIndex = dockerfile.indexOf(
+      "COPY scripts/lib/package-dist-imports.mjs ./scripts/lib/package-dist-imports.mjs",
+    );
+
+    expect(postinstallIndex).toBeGreaterThan(-1);
+    expect(runtimeDepsHelperIndex).toBeGreaterThan(-1);
+    expect(distImportHelperIndex).toBeGreaterThan(-1);
+    expect(postinstallIndex).toBeLessThan(installIndex);
+    expect(runtimeDepsHelperIndex).toBeLessThan(installIndex);
+    expect(distImportHelperIndex).toBeLessThan(installIndex);
+  });
+
   it("prunes runtime dependencies after the build stage", async () => {
     const dockerfile = await readFile(dockerfilePath, "utf8");
     expect(dockerfile).toContain("FROM build AS runtime-assets");
@@ -125,6 +144,24 @@ describe("Dockerfile", () => {
     const dockerfile = await readFile(dockerfilePath, "utf8");
     expect(dockerfile).toContain('== "fpr" {');
     expect(dockerfile).not.toContain('\\"fpr\\"');
+  });
+
+  it("counts primary pub keys before Docker apt fingerprint compare and dearmor", async () => {
+    const dockerfile = collapseDockerContinuations(await readFile(dockerfilePath, "utf8"));
+    const anchor = dockerfile.indexOf(
+      "curl -fsSL https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg.asc",
+    );
+    expect(anchor).toBeGreaterThan(-1);
+    const slice = dockerfile.slice(anchor);
+    expect(slice).toContain("docker_gpg_pub_count=");
+    expect(slice).toContain('$1 == "pub"');
+    expect(slice).not.toContain('\\"pub\\"');
+    const pubCountIdx = slice.indexOf("docker_gpg_pub_count=");
+    const fpIdx = slice.indexOf("actual_fingerprint=");
+    const dearmorIdx = slice.indexOf("gpg --dearmor");
+    expect(pubCountIdx).toBeLessThan(fpIdx);
+    expect(fpIdx).toBeLessThan(dearmorIdx);
+    expect(slice).toContain('[ "$docker_gpg_pub_count" != "1" ]');
   });
 
   it("keeps runtime pnpm available", async () => {

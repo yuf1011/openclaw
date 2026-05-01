@@ -4,10 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectChannelSchemaMetadata } from "../config/channel-config-metadata.js";
 import { collectBundledChannelConfigs } from "./bundled-channel-config-metadata.js";
 import type { PluginCandidate } from "./discovery.js";
-import {
-  clearPluginManifestRegistryCache,
-  loadPluginManifestRegistry,
-} from "./manifest-registry.js";
+import { loadPluginManifestRegistry } from "./manifest-registry.js";
 import type { OpenClawPackageManifest } from "./manifest.js";
 import { cleanupTrackedTempDirs, makeTrackedTempDir } from "./test-helpers/fs-fixtures.js";
 
@@ -87,7 +84,6 @@ function createPluginCandidate(params: {
 function loadRegistry(candidates: PluginCandidate[]) {
   return loadPluginManifestRegistry({
     candidates,
-    cache: false,
   });
 }
 
@@ -175,7 +171,6 @@ function loadRegistryForMinHostVersionCase(params: {
   env?: NodeJS.ProcessEnv;
 }) {
   return loadPluginManifestRegistry({
-    cache: false,
     ...(params.env ? { env: params.env } : {}),
     candidates: [
       createPluginCandidate({
@@ -226,7 +221,6 @@ function createDuplicateCandidateRegistry(params: {
   writeManifest(duplicateDir, manifest);
 
   return loadPluginManifestRegistry({
-    cache: false,
     candidates: [
       createPluginCandidate({
         idHint: params.pluginId,
@@ -306,7 +300,6 @@ function expectCachedPluginRoot(params: {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  clearPluginManifestRegistryCache();
   cleanupTrackedTempDirs(tempDirs);
 });
 
@@ -415,7 +408,6 @@ describe("loadPluginManifestRegistry", () => {
     writeManifest(globalDir, manifest);
 
     const registry = loadPluginManifestRegistry({
-      cache: false,
       installRecords: {
         zalouser: {
           source: "npm",
@@ -449,7 +441,6 @@ describe("loadPluginManifestRegistry", () => {
     writeManifest(globalDir, manifest);
 
     const registry = loadPluginManifestRegistry({
-      cache: false,
       installRecords: {
         zalouser: {
           source: "npm",
@@ -861,7 +852,6 @@ describe("loadPluginManifestRegistry", () => {
     });
 
     const registry = loadPluginManifestRegistry({
-      cache: false,
       bundledChannelConfigCollector: collectBundledChannelConfigs,
       candidates: [candidate],
     });
@@ -1139,6 +1129,17 @@ describe("loadPluginManifestRegistry", () => {
             id: "openai",
             authMethods: ["api-key"],
             envVars: ["OPENAI_API_KEY"],
+            authEvidence: [
+              {
+                type: "local-file-with-env",
+                fileEnvVar: "OPENAI_CREDENTIALS_FILE",
+                fallbackPaths: ["${HOME}/.config/openai/credentials.json"],
+                requiresAnyEnv: ["OPENAI_PROJECT", "OPENAI_ORG"],
+                requiresAllEnv: ["OPENAI_REGION"],
+                credentialMarker: "openai-local-credentials",
+                source: "openai local credentials",
+              },
+            ],
           },
         ],
         cliBackends: ["openai-cli"],
@@ -1168,6 +1169,17 @@ describe("loadPluginManifestRegistry", () => {
           id: "openai",
           authMethods: ["api-key"],
           envVars: ["OPENAI_API_KEY"],
+          authEvidence: [
+            {
+              type: "local-file-with-env",
+              fileEnvVar: "OPENAI_CREDENTIALS_FILE",
+              fallbackPaths: ["${HOME}/.config/openai/credentials.json"],
+              requiresAnyEnv: ["OPENAI_PROJECT", "OPENAI_ORG"],
+              requiresAllEnv: ["OPENAI_REGION"],
+              credentialMarker: "openai-local-credentials",
+              source: "openai local credentials",
+            },
+          ],
         },
       ],
       cliBackends: ["openai-cli"],
@@ -1814,7 +1826,6 @@ describe("loadPluginManifestRegistry", () => {
     };
 
     const first = loadPluginManifestRegistry({
-      cache: true,
       config,
       env: hermeticEnv({
         HOME: homeA,
@@ -1823,7 +1834,6 @@ describe("loadPluginManifestRegistry", () => {
       }),
     });
     const second = loadPluginManifestRegistry({
-      cache: true,
       config,
       env: hermeticEnv({
         HOME: homeB,
@@ -1861,14 +1871,12 @@ describe("loadPluginManifestRegistry", () => {
     ];
 
     const olderHost = loadPluginManifestRegistry({
-      cache: true,
       candidates,
       env: hermeticEnv({
         OPENCLAW_VERSION: "2026.3.21",
       }),
     });
     const newerHost = loadPluginManifestRegistry({
-      cache: true,
       candidates,
       env: hermeticEnv({
         OPENCLAW_VERSION: "2026.3.22",

@@ -36,6 +36,7 @@ function tryLoadBundledProviderPolicySurface(
       const mod = loadBundledPluginPublicArtifactModuleSync<Record<string, unknown>>({
         dirName: pluginId,
         artifactBasename,
+        installRuntimeDeps: false,
       });
       if (hasProviderPolicyHook(mod)) {
         return mod;
@@ -51,11 +52,6 @@ function tryLoadBundledProviderPolicySurface(
     }
   }
   return null;
-}
-
-export function clearBundledProviderPolicySurfaceCache(): void {
-  // Public provider policy surfaces are resolved fresh. The underlying module
-  // loader owns import reuse.
 }
 
 export function resolveBundledProviderPolicySurface(

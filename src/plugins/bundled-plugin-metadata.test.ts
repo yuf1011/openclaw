@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { collectBundledChannelConfigs } from "./bundled-channel-config-metadata.js";
 import {
   type BundledPluginMetadata,
-  clearBundledPluginMetadataCache,
   listBundledPluginMetadata,
   resolveBundledPluginGeneratedPath,
   resolveBundledPluginRepoEntryPath,
@@ -36,6 +35,7 @@ const EXPECTED_BUNDLED_STARTUP_PLUGIN_IDS = [
   "diagnostics-otel",
   "diagnostics-prometheus",
   "diffs",
+  "file-transfer",
   "google-meet",
   "llm-task",
   "lobster",
@@ -53,6 +53,7 @@ const EXPECTED_EMPTY_CONFIG_GATEWAY_STARTUP_PLUGIN_IDS = [
   "bonjour",
   "browser",
   "device-pair",
+  "file-transfer",
   "memory-core",
   "phone-control",
   "talk-voice",
@@ -472,8 +473,6 @@ describe("bundled plugin metadata", () => {
       configSchema: { type: "object" },
     });
     fs.writeFileSync(path.join(pluginRoot, "index.ts"), "export const source = true;\n", "utf8");
-
-    clearBundledPluginMetadataCache();
     expect(
       listBundledPluginMetadata({
         rootDir: tempRoot,
@@ -577,8 +576,6 @@ describe("bundled plugin metadata", () => {
 
     fs.mkdirSync(distPluginRoot, { recursive: true });
     fs.writeFileSync(path.join(distPluginRoot, "index.js"), "export const built = true;\n", "utf8");
-
-    clearBundledPluginMetadataCache();
     expect(
       resolveBundledPluginRepoEntryPath({
         rootDir: tempRoot,
@@ -642,8 +639,6 @@ describe("bundled plugin metadata", () => {
       ].join("\n"),
       "utf8",
     );
-
-    clearBundledPluginMetadataCache();
     const entries = listBundledPluginMetadata({ rootDir: tempRoot });
     const channelConfigs = entries[0]?.manifest.channelConfigs as
       | Record<string, unknown>
@@ -696,8 +691,6 @@ describe("bundled plugin metadata", () => {
       "export {};\n",
       "utf8",
     );
-
-    clearBundledPluginMetadataCache();
     const entries = listBundledPluginMetadata({ rootDir: tempRoot });
     const firstEntry = entries[0] as
       | {
@@ -764,8 +757,6 @@ describe("bundled plugin metadata", () => {
       ].join("\n"),
       "utf8",
     );
-
-    clearBundledPluginMetadataCache();
     const entries = listBundledPluginMetadata({ rootDir: distRoot });
     const channelConfigs = entries[0]?.manifest.channelConfigs as
       | Record<string, unknown>
@@ -845,8 +836,6 @@ describe("bundled plugin metadata", () => {
       ].join("\n"),
       "utf8",
     );
-
-    clearBundledPluginMetadataCache();
     const entries = listBundledPluginMetadata({ rootDir: distRoot });
     const channelConfigs = entries[0]?.manifest.channelConfigs as
       | Record<string, unknown>

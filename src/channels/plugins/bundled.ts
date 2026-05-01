@@ -36,9 +36,13 @@ type BundledChannelEntryRuntimeContract = {
     accountInspect?: boolean;
   };
   register: (api: unknown) => void;
-  loadChannelPlugin: () => ChannelPlugin;
-  loadChannelSecrets?: () => ChannelPlugin["secrets"] | undefined;
-  loadChannelAccountInspector?: () => NonNullable<ChannelPlugin["config"]["inspectAccount"]>;
+  loadChannelPlugin: (options?: BundledEntryModuleLoadOptions) => ChannelPlugin;
+  loadChannelSecrets?: (
+    options?: BundledEntryModuleLoadOptions,
+  ) => ChannelPlugin["secrets"] | undefined;
+  loadChannelAccountInspector?: (
+    options?: BundledEntryModuleLoadOptions,
+  ) => NonNullable<ChannelPlugin["config"]["inspectAccount"]>;
   setChannelRuntime?: (runtime: PluginRuntime) => void;
 };
 
@@ -88,6 +92,8 @@ type BundledChannelLoadContext = {
 };
 
 const log = createSubsystemLogger("channels");
+const MAX_BUNDLED_CHANNEL_LOAD_CONTEXTS = 32;
+const bundledChannelLoadContextsByRoot = new Map<string, BundledChannelLoadContext>();
 
 function resolveChannelPluginModuleEntry(
   moduleExport: unknown,
@@ -237,7 +243,7 @@ function loadGeneratedBundledChannelEntry(params: {
         rootScope: params.rootScope,
         metadata: params.metadata,
         entry: params.metadata.source,
-        installRuntimeDeps: true,
+        installRuntimeDeps: false,
       }),
     );
     if (!entry) {
@@ -310,9 +316,27 @@ function resolveActiveBundledChannelLoadScope(): {
   loadContext: BundledChannelLoadContext;
 } {
   const rootScope = resolveBundledChannelRootScope();
+  const cachedContext = bundledChannelLoadContextsByRoot.get(rootScope.cacheKey);
+  if (cachedContext) {
+    bundledChannelLoadContextsByRoot.delete(rootScope.cacheKey);
+    bundledChannelLoadContextsByRoot.set(rootScope.cacheKey, cachedContext);
+    return {
+      rootScope,
+      loadContext: cachedContext,
+    };
+  }
+  const loadContext = createBundledChannelLoadContext();
+  bundledChannelLoadContextsByRoot.set(rootScope.cacheKey, loadContext);
+  while (bundledChannelLoadContextsByRoot.size > MAX_BUNDLED_CHANNEL_LOAD_CONTEXTS) {
+    const oldestKey = bundledChannelLoadContextsByRoot.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    bundledChannelLoadContextsByRoot.delete(oldestKey);
+  }
   return {
     rootScope,
-    loadContext: createBundledChannelLoadContext(),
+    loadContext,
   };
 }
 
@@ -527,7 +551,9 @@ function getBundledChannelPluginForRoot(
   loadContext.pluginLoadInProgressIds.add(id);
   try {
     const metadata = resolveBundledChannelMetadata(id, rootScope);
-    const plugin = entry.loadChannelPlugin() as ChannelPlugin | undefined;
+    const plugin = entry.loadChannelPlugin({ installRuntimeDeps: false }) as
+      | ChannelPlugin
+      | undefined;
     if (!plugin) {
       loadContext.lazyPluginsById.set(id, null);
       return undefined;
@@ -566,7 +592,7 @@ function getBundledChannelSecretsForRoot(
   }
   try {
     const secrets =
-      entry.loadChannelSecrets?.() ??
+      entry.loadChannelSecrets?.({ installRuntimeDeps: false }) ??
       getBundledChannelPluginForRoot(id, rootScope, loadContext)?.secrets;
     loadContext.lazySecretsById.set(id, secrets ?? null);
     return secrets;
@@ -592,7 +618,7 @@ function getBundledChannelAccountInspectorForRoot(
     return undefined;
   }
   try {
-    const inspector = entry.loadChannelAccountInspector();
+    const inspector = entry.loadChannelAccountInspector({ installRuntimeDeps: false });
     loadContext.lazyAccountInspectorsById.set(id, inspector);
     return inspector;
   } catch (error) {
@@ -647,7 +673,7 @@ function getBundledChannelSetupSecretsForRoot(
   }
   try {
     const secrets =
-      entry.loadSetupSecrets?.() ??
+      entry.loadSetupSecrets?.({ installRuntimeDeps: false }) ??
       getBundledChannelSetupPluginForRoot(id, rootScope, loadContext)?.secrets;
     loadContext.lazySetupSecretsById.set(id, secrets ?? null);
     return secrets;

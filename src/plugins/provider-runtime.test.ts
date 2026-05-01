@@ -87,7 +87,6 @@ let inspectProviderToolSchemasWithPlugin: typeof import("./provider-runtime.js")
 let normalizeProviderResolvedModelWithPlugin: typeof import("./provider-runtime.js").normalizeProviderResolvedModelWithPlugin;
 let prepareProviderDynamicModel: typeof import("./provider-runtime.js").prepareProviderDynamicModel;
 let prepareProviderRuntimeAuth: typeof import("./provider-runtime.js").prepareProviderRuntimeAuth;
-let resetProviderRuntimeHookCacheForTest: typeof import("./provider-runtime.js").resetProviderRuntimeHookCacheForTest;
 let refreshProviderOAuthCredentialWithPlugin: typeof import("./provider-runtime.js").refreshProviderOAuthCredentialWithPlugin;
 let resolveProviderRuntimePlugin: typeof import("./provider-runtime.js").resolveProviderRuntimePlugin;
 let providerRuntimeTesting: typeof import("./provider-runtime.js").__testing;
@@ -149,6 +148,7 @@ function createOpenAiCatalogProviderPlugin(
       { provider: "openai", id: "gpt-5.4-nano", name: "gpt-5.4-nano" },
       { provider: "openai-codex", id: "gpt-5.4", name: "gpt-5.4" },
       { provider: "openai-codex", id: "gpt-5.4-pro", name: "gpt-5.4-pro" },
+      { provider: "openai-codex", id: "gpt-5.4-mini", name: "gpt-5.4-mini" },
     ],
     ...overrides,
   };
@@ -309,7 +309,6 @@ describe("provider-runtime", () => {
       normalizeProviderResolvedModelWithPlugin,
       prepareProviderDynamicModel,
       prepareProviderRuntimeAuth,
-      resetProviderRuntimeHookCacheForTest,
       refreshProviderOAuthCredentialWithPlugin,
       resolveProviderRuntimePlugin,
       __testing: providerRuntimeTesting,
@@ -320,9 +319,7 @@ describe("provider-runtime", () => {
   });
 
   beforeEach(() => {
-    resetProviderRuntimeHookCacheForTest();
     providerRuntimeTesting.resetExternalAuthFallbackWarningCacheForTest();
-    providerRuntimeTesting.resetCatalogHookProvidersCacheForTest();
     resolvePluginProvidersMock.mockReset();
     resolvePluginProvidersMock.mockReturnValue([]);
     isPluginProvidersLoadInFlightMock.mockReset();
@@ -372,7 +369,7 @@ describe("provider-runtime", () => {
     });
   });
 
-  it("keeps provider-ref owner plugin config in provider hook cache keys", () => {
+  it("uses current provider-ref owner plugin config for provider hooks", () => {
     const provider: ProviderPlugin = {
       id: DEMO_PROVIDER_ID,
       label: "Demo",
