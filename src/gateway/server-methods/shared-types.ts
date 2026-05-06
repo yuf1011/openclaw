@@ -45,7 +45,7 @@ export type GatewayRequestContext = {
   getRuntimeConfig: () => OpenClawConfig;
   execApprovalManager?: ExecApprovalManager;
   pluginApprovalManager?: ExecApprovalManager<PluginApprovalRequestPayload>;
-  loadGatewayModelCatalog: () => Promise<ModelCatalogEntry[]>;
+  loadGatewayModelCatalog: (params?: { readOnly?: boolean }) => Promise<ModelCatalogEntry[]>;
   getHealthCache: () => HealthSummary | null;
   refreshHealthSnapshot: (opts?: {
     probe?: boolean;
@@ -62,7 +62,7 @@ export type GatewayRequestContext = {
   nodeSubscribe: (nodeId: string, sessionKey: string) => void;
   nodeUnsubscribe: (nodeId: string, sessionKey: string) => void;
   nodeUnsubscribeAll: (nodeId: string) => void;
-  hasConnectedMobileNode: () => boolean;
+  hasConnectedTalkNode: () => boolean;
   hasExecApprovalClients?: (excludeConnId?: string) => boolean;
   disconnectClientsForDevice?: (deviceId: string, opts?: { role?: string }) => void;
   disconnectClientsUsingSharedGatewayAuth?: () => void;
