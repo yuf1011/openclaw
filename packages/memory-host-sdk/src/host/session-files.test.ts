@@ -1,3 +1,4 @@
+// Memory Host SDK tests cover session files behavior.
 import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -5,12 +6,29 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import {
   buildSessionEntry,
   listSessionFilesForAgent,
+  parseCanonicalSessionSyncTargetFromPath,
+  resolveSessionIdentityForTranscriptFile,
+  resolveSessionFileForSyncTarget,
   sessionPathForFile,
+  type SessionFileEntry,
 } from "./session-files.js";
+
+function captureStateDirEnv() {
+  const value = process.env.OPENCLAW_STATE_DIR;
+  return {
+    restore() {
+      if (value === undefined) {
+        Reflect.deleteProperty(process.env, "OPENCLAW_STATE_DIR");
+      } else {
+        Reflect.set(process.env, "OPENCLAW_STATE_DIR", value);
+      }
+    },
+  };
+}
 
 let fixtureRoot: string;
 let tmpDir: string;
-let originalStateDir: string | undefined;
+let envSnapshot: ReturnType<typeof captureStateDirEnv> | undefined;
 let fixtureId = 0;
 
 beforeAll(() => {
@@ -24,17 +42,21 @@ afterAll(() => {
 beforeEach(() => {
   tmpDir = path.join(fixtureRoot, `case-${fixtureId++}`);
   fsSync.mkdirSync(tmpDir, { recursive: true });
-  originalStateDir = process.env.OPENCLAW_STATE_DIR;
-  process.env.OPENCLAW_STATE_DIR = tmpDir;
+  envSnapshot = captureStateDirEnv();
+  Reflect.set(process.env, "OPENCLAW_STATE_DIR", tmpDir);
 });
 
 afterEach(() => {
-  if (originalStateDir === undefined) {
-    delete process.env.OPENCLAW_STATE_DIR;
-  } else {
-    process.env.OPENCLAW_STATE_DIR = originalStateDir;
-  }
+  envSnapshot?.restore();
+  envSnapshot = undefined;
 });
+
+function requireSessionEntry(entry: SessionFileEntry | null): SessionFileEntry {
+  if (!entry) {
+    throw new Error("expected session entry");
+  }
+  return entry;
+}
 
 describe("listSessionFilesForAgent", () => {
   it("includes reset and deleted transcripts in session file listing", async () => {
@@ -87,6 +109,118 @@ describe("sessionPathForFile", () => {
   });
 });
 
+describe("memory session sync targets", () => {
+  it("parses deprecated canonical OpenClaw transcript paths into sync identity", () => {
+    const sessionFile = path.join(tmpDir, "agents", "main", "sessions", "active.jsonl");
+    fsSync.mkdirSync(path.dirname(sessionFile), { recursive: true });
+
+    expect(parseCanonicalSessionSyncTargetFromPath(sessionFile)).toEqual({
+      agentId: "main",
+      sessionId: "active",
+    });
+  });
+
+  it("rejects arbitrary deprecated transcript path hints", () => {
+    expect(parseCanonicalSessionSyncTargetFromPath(path.join(tmpDir, "active.jsonl"))).toBeNull();
+    expect(
+      parseCanonicalSessionSyncTargetFromPath(
+        path.join(tmpDir, "agents", "main", "sessions", "active.trajectory.jsonl"),
+      ),
+    ).toBeNull();
+  });
+
+  it("resolves identity sync targets to the current file-backed transcript", () => {
+    expect(resolveSessionFileForSyncTarget({ sessionId: "active" }, "main")).toEqual({
+      agentId: "main",
+      sessionId: "active",
+      sessionFile: path.join(tmpDir, "agents", "main", "sessions", "active.jsonl"),
+    });
+  });
+
+  it("normalizes agent ids before resolving identity sync targets", () => {
+    expect(resolveSessionFileForSyncTarget({ agentId: "MAIN", sessionId: "active" })).toEqual({
+      agentId: "main",
+      sessionId: "active",
+      sessionFile: path.join(tmpDir, "agents", "main", "sessions", "active.jsonl"),
+    });
+  });
+
+  it("rejects identity sync targets that would escape the sessions directory", () => {
+    expect(resolveSessionFileForSyncTarget({ sessionId: "../outside" }, "main")).toBeNull();
+  });
+
+  it("rejects identity sync targets that normalize to another transcript", () => {
+    expect(resolveSessionFileForSyncTarget({ sessionId: "foo/../active" }, "main")).toBeNull();
+  });
+
+  it("resolves identity sync targets through persisted session keys", () => {
+    const sessionsDir = path.join(tmpDir, "agents", "main", "sessions");
+    fsSync.mkdirSync(sessionsDir, { recursive: true });
+    fsSync.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify({
+        "agent:main:chat:thread-456": {
+          sessionFile: "active-thread-456.jsonl",
+          sessionId: "active",
+        },
+      }),
+    );
+
+    expect(
+      resolveSessionFileForSyncTarget({
+        agentId: "main",
+        sessionId: "active",
+        sessionKey: "agent:main:chat:thread-456",
+      }),
+    ).toEqual({
+      agentId: "main",
+      sessionId: "active",
+      sessionFile: path.join(sessionsDir, "active-thread-456.jsonl"),
+    });
+  });
+
+  it("resolves identity sync targets through persisted session ids", () => {
+    const sessionsDir = path.join(tmpDir, "agents", "main", "sessions");
+    fsSync.mkdirSync(sessionsDir, { recursive: true });
+    fsSync.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify({
+        "agent:main:chat:thread-456": {
+          sessionFile: "active-thread-456.jsonl",
+          sessionId: "active",
+        },
+      }),
+    );
+
+    expect(resolveSessionFileForSyncTarget({ agentId: "main", sessionId: "active" })).toEqual({
+      agentId: "main",
+      sessionId: "active",
+      sessionFile: path.join(sessionsDir, "active-thread-456.jsonl"),
+    });
+  });
+
+  it("resolves transcript file identities through persisted session keys", () => {
+    const sessionsDir = path.join(tmpDir, "agents", "main", "sessions");
+    fsSync.mkdirSync(sessionsDir, { recursive: true });
+    const sessionFile = path.join(sessionsDir, "active-thread-456.jsonl");
+    fsSync.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify({
+        "agent:main:chat:thread-456": {
+          sessionFile: "active-thread-456.jsonl",
+          sessionId: "active",
+        },
+      }),
+    );
+
+    expect(resolveSessionIdentityForTranscriptFile(sessionFile)).toEqual({
+      agentId: "main",
+      sessionId: "active",
+      sessionKey: "agent:main:chat:thread-456",
+    });
+  });
+});
+
 describe("buildSessionEntry", () => {
   it("returns lineMap tracking original JSONL line numbers", async () => {
     // Simulate a real session JSONL file with metadata records interspersed
@@ -110,22 +244,16 @@ describe("buildSessionEntry", () => {
     const filePath = path.join(tmpDir, "session.jsonl");
     fsSync.writeFileSync(filePath, jsonlLines.join("\n"));
 
-    const entry = await buildSessionEntry(filePath);
-    expect(entry).not.toBeNull();
-
-    // The content should have 3 lines (3 message records)
-    const contentLines = entry!.content.split("\n");
-    expect(contentLines).toHaveLength(3);
-    expect(contentLines[0]).toContain("User: Hello world");
-    expect(contentLines[1]).toContain("Assistant: Hi there");
-    expect(contentLines[2]).toContain("User: Tell me a joke");
+    const entry = requireSessionEntry(await buildSessionEntry(filePath));
+    expect(entry.content).toBe(
+      "User: Hello world\nAssistant: Hi there, how can I help?\nUser: Tell me a joke",
+    );
 
     // lineMap should map each content line to its original JSONL line (1-indexed)
     // Content line 0 → JSONL line 4 (the first user message)
     // Content line 1 → JSONL line 6 (the assistant message)
     // Content line 2 → JSONL line 7 (the second user message)
-    expect(entry!.lineMap).toBeDefined();
-    expect(entry!.lineMap).toEqual([4, 6, 7]);
+    expect(entry.lineMap).toStrictEqual([4, 6, 7]);
   });
 
   it("returns empty lineMap when no messages are found", async () => {
@@ -136,10 +264,9 @@ describe("buildSessionEntry", () => {
     const filePath = path.join(tmpDir, "empty-session.jsonl");
     fsSync.writeFileSync(filePath, jsonlLines.join("\n"));
 
-    const entry = await buildSessionEntry(filePath);
-    expect(entry).not.toBeNull();
-    expect(entry!.content).toBe("");
-    expect(entry!.lineMap).toEqual([]);
+    const entry = requireSessionEntry(await buildSessionEntry(filePath));
+    expect(entry.content).toBe("");
+    expect(entry.lineMap).toStrictEqual([]);
   });
 
   it("indexes usage-counted reset/deleted archives but still skips bak and checkpoint artifacts", async () => {
@@ -159,26 +286,24 @@ describe("buildSessionEntry", () => {
     fsSync.writeFileSync(bakPath, content);
     fsSync.writeFileSync(checkpointPath, content);
 
-    const resetEntry = await buildSessionEntry(resetPath);
-    const deletedEntry = await buildSessionEntry(deletedPath);
-    const bakEntry = await buildSessionEntry(bakPath);
-    const checkpointEntry = await buildSessionEntry(checkpointPath);
+    const resetEntry = requireSessionEntry(await buildSessionEntry(resetPath));
+    const deletedEntry = requireSessionEntry(await buildSessionEntry(deletedPath));
+    const bakEntry = requireSessionEntry(await buildSessionEntry(bakPath));
+    const checkpointEntry = requireSessionEntry(await buildSessionEntry(checkpointPath));
 
     // Usage-counted archives (reset, deleted) must surface real content so
     // post-reset memory_search can recover prior session history.
-    expect(resetEntry?.content).toContain("User: Archived hello");
-    expect(resetEntry?.lineMap).toEqual([1]);
-    expect(deletedEntry?.content).toContain("User: Archived hello");
-    expect(deletedEntry?.lineMap).toEqual([1]);
+    expect(resetEntry.content).toBe("User: Archived hello");
+    expect(resetEntry.lineMap).toStrictEqual([1]);
+    expect(deletedEntry.content).toBe("User: Archived hello");
+    expect(deletedEntry.lineMap).toStrictEqual([1]);
 
     // .bak and compaction checkpoints remain opaque pre-archive / snapshot
     // artifacts and stay empty so they do not get double-indexed.
-    expect(bakEntry).not.toBeNull();
-    expect(bakEntry?.content).toBe("");
-    expect(bakEntry?.lineMap).toEqual([]);
-    expect(checkpointEntry).not.toBeNull();
-    expect(checkpointEntry?.content).toBe("");
-    expect(checkpointEntry?.lineMap).toEqual([]);
+    expect(bakEntry.content).toBe("");
+    expect(bakEntry.lineMap).toStrictEqual([]);
+    expect(checkpointEntry.content).toBe("");
+    expect(checkpointEntry.lineMap).toStrictEqual([]);
   });
 
   it("keeps cron-run deleted archives opaque when the live session store entry is gone", async () => {
@@ -198,12 +323,11 @@ describe("buildSessionEntry", () => {
     ];
     fsSync.writeFileSync(archivePath, jsonlLines.join("\n"));
 
-    const entry = await buildSessionEntry(archivePath);
+    const entry = requireSessionEntry(await buildSessionEntry(archivePath));
 
-    expect(entry).not.toBeNull();
-    expect(entry?.content).toBe("");
-    expect(entry?.lineMap).toEqual([]);
-    expect(entry?.generatedByCronRun).toBe(true);
+    expect(entry.content).toBe("");
+    expect(entry.lineMap).toStrictEqual([]);
+    expect(entry.generatedByCronRun).toBe(true);
   });
 
   it("keeps cron-run reset archives opaque when session metadata preserves the cron key", async () => {
@@ -220,12 +344,11 @@ describe("buildSessionEntry", () => {
     ];
     fsSync.writeFileSync(archivePath, jsonlLines.join("\n"));
 
-    const entry = await buildSessionEntry(archivePath);
+    const entry = requireSessionEntry(await buildSessionEntry(archivePath));
 
-    expect(entry).not.toBeNull();
-    expect(entry?.content).toBe("");
-    expect(entry?.lineMap).toEqual([]);
-    expect(entry?.generatedByCronRun).toBe(true);
+    expect(entry.content).toBe("");
+    expect(entry.lineMap).toStrictEqual([]);
+    expect(entry.generatedByCronRun).toBe(true);
   });
 
   it("skips blank lines and invalid JSON without breaking lineMap", async () => {
@@ -239,9 +362,8 @@ describe("buildSessionEntry", () => {
     const filePath = path.join(tmpDir, "gaps.jsonl");
     fsSync.writeFileSync(filePath, jsonlLines.join("\n"));
 
-    const entry = await buildSessionEntry(filePath);
-    expect(entry).not.toBeNull();
-    expect(entry!.lineMap).toEqual([3, 5]);
+    const entry = requireSessionEntry(await buildSessionEntry(filePath));
+    expect(entry.lineMap).toStrictEqual([3, 5]);
   });
 
   it("strips inbound metadata when a user envelope is split across text blocks", async () => {
@@ -269,9 +391,8 @@ describe("buildSessionEntry", () => {
     const filePath = path.join(tmpDir, "enveloped-session-array.jsonl");
     fsSync.writeFileSync(filePath, jsonlLines.join("\n"));
 
-    const entry = await buildSessionEntry(filePath);
-    expect(entry).not.toBeNull();
-    expect(entry!.content).toBe("User: Actual user text");
+    const entry = requireSessionEntry(await buildSessionEntry(filePath));
+    expect(entry.content).toBe("User: Actual user text");
   });
 
   it("skips inter-session user messages", async () => {
@@ -296,9 +417,26 @@ describe("buildSessionEntry", () => {
     const filePath = path.join(tmpDir, "inter-session-session.jsonl");
     fsSync.writeFileSync(filePath, jsonlLines.join("\n"));
 
-    const entry = await buildSessionEntry(filePath);
-    expect(entry).not.toBeNull();
-    expect(entry!.content).toBe("Assistant: User-facing summary.\nUser: Actual user follow-up.");
-    expect(entry!.lineMap).toEqual([2, 3]);
+    const entry = requireSessionEntry(await buildSessionEntry(filePath));
+    expect(entry.content).toBe("Assistant: User-facing summary.\nUser: Actual user follow-up.");
+    expect(entry.lineMap).toStrictEqual([2, 3]);
+  });
+
+  it("drops Date-invalid numeric message timestamps", async () => {
+    const jsonlLines = [
+      JSON.stringify({
+        type: "message",
+        message: {
+          role: "user",
+          content: "Hello",
+          timestamp: 8_640_000_000_000_001,
+        },
+      }),
+    ];
+    const filePath = path.join(tmpDir, "invalid-timestamp-session.jsonl");
+    fsSync.writeFileSync(filePath, jsonlLines.join("\n"));
+
+    const entry = requireSessionEntry(await buildSessionEntry(filePath));
+    expect(entry.messageTimestampsMs).toStrictEqual([0]);
   });
 });

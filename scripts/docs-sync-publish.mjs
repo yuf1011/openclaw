@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+// Syncs source docs into the generated publish tree.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -10,6 +11,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..");
 const SOURCE_DOCS_DIR = path.join(ROOT, "docs");
 const SOURCE_CONFIG_PATH = path.join(SOURCE_DOCS_DIR, "docs.json");
+const INTERNAL_DOCS_DIRS = ["internal"];
 const DEFAULT_CLAWHUB_SOURCE_REPO = "openclaw/clawhub";
 const CLAWHUB_DOCS_TARGET_DIR = "clawhub";
 const CLAWHUB_REPO_ENV = "OPENCLAW_DOCS_SYNC_CLAWHUB_REPO";
@@ -168,7 +170,15 @@ const GENERATED_LOCALES = [
   },
 ];
 
-function parseArgs(argv) {
+function readOptionValue(argv, index, optionName) {
+  const value = argv[index + 1];
+  if (value === undefined || value === "" || value.startsWith("-")) {
+    throw new Error(`${optionName} requires a value`);
+  }
+  return value;
+}
+
+export function parseArgs(argv) {
   const args = {
     target: "",
     sourceRepo: "",
@@ -183,27 +193,27 @@ function parseArgs(argv) {
     const part = argv[index];
     switch (part) {
       case "--target":
-        args.target = argv[index + 1] ?? "";
+        args.target = readOptionValue(argv, index, part);
         index += 1;
         break;
       case "--source-repo":
-        args.sourceRepo = argv[index + 1] ?? "";
+        args.sourceRepo = readOptionValue(argv, index, part);
         index += 1;
         break;
       case "--source-sha":
-        args.sourceSha = argv[index + 1] ?? "";
+        args.sourceSha = readOptionValue(argv, index, part);
         index += 1;
         break;
       case "--clawhub-repo":
-        args.clawhubRepo = argv[index + 1] ?? "";
+        args.clawhubRepo = readOptionValue(argv, index, part);
         index += 1;
         break;
       case "--clawhub-source-repo":
-        args.clawhubSourceRepo = argv[index + 1] ?? "";
+        args.clawhubSourceRepo = readOptionValue(argv, index, part);
         index += 1;
         break;
       case "--clawhub-source-sha":
-        args.clawhubSourceSha = argv[index + 1] ?? "";
+        args.clawhubSourceSha = readOptionValue(argv, index, part);
         index += 1;
         break;
       default:
@@ -297,6 +307,9 @@ function getGitHeadSha(repoPath) {
   }
 }
 
+/**
+ * Resolves the local ClawHub repository path used for docs mirroring.
+ */
 export function resolveClawHubRepoPath(value = "", options = {}) {
   const required = options.required !== false;
   const candidates = [
@@ -458,6 +471,22 @@ function repairGeneratedLocaleDocs(targetDocsDir) {
   }
 }
 
+function pruneInternalDocs(targetDocsDir) {
+  let pruned = 0;
+  for (const relativeDir of INTERNAL_DOCS_DIRS) {
+    const dirPath = path.join(targetDocsDir, relativeDir);
+    if (!fs.existsSync(dirPath)) {
+      continue;
+    }
+    fs.rmSync(dirPath, { recursive: true, force: true });
+    pruned += 1;
+  }
+
+  if (pruned > 0) {
+    console.log(`Pruned ${pruned} internal-only docs director${pruned === 1 ? "y" : "ies"}.`);
+  }
+}
+
 function shouldExcludeClawHubDocsPath(relativePath) {
   const normalized = normalizeSlashes(relativePath);
   return (
@@ -525,7 +554,7 @@ function rewriteClawHubMarkdownLinkTarget(rawTarget, relativeSourceDir, source) 
     return rawTarget;
   }
 
-  let normalizedRelative = "";
+  let normalizedRelative;
   if (pathPart.startsWith("docs/")) {
     normalizedRelative = normalizeSlashes(pathPart.slice("docs/".length));
   } else if (
@@ -562,6 +591,9 @@ function rewriteClawHubMarkdownLinks(raw, relativeSourcePath, source) {
   });
 }
 
+/**
+ * Mirrors ClawHub docs into the target docs tree.
+ */
 export function syncClawHubDocsTree(targetDocsDir, options = {}) {
   const repoPath = resolveClawHubRepoPath(options.repoPath || "", {
     required: options.required !== false,
@@ -642,10 +674,12 @@ function syncDocsTree(targetRoot, options = {}) {
     "P .i18n/README.md",
     "--exclude",
     ".i18n/README.md",
+    ...INTERNAL_DOCS_DIRS.flatMap((dir) => ["--exclude", `${dir}/`]),
     ...localeFilters,
     `${SOURCE_DOCS_DIR}/`,
     `${targetDocsDir}/`,
   ]);
+  pruneInternalDocs(targetDocsDir);
 
   for (const locale of GENERATED_LOCALES) {
     const sourceTmPath = path.join(SOURCE_DOCS_DIR, ".i18n", locale.tmFile);

@@ -16,26 +16,6 @@ path_is_docsish() {
   return 1
 }
 
-path_is_testish() {
-  local path="$1"
-  case "$path" in
-    *__tests__/*|*.test.*|*.spec.*|test/*|tests/*)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-path_is_maintainer_workflow_only() {
-  local path="$1"
-  case "$path" in
-    .agents/*|scripts/pr|scripts/pr-*|docs/subagent.md)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
 file_list_is_docsish_only() {
   local files="$1"
   local saw_any=false
@@ -52,22 +32,8 @@ file_list_is_docsish_only() {
 }
 
 changelog_required_for_changed_files() {
-  local files="$1"
-  local saw_any=false
-  local path
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    saw_any=true
-    if path_is_docsish "$path" || path_is_testish "$path" || path_is_maintainer_workflow_only "$path"; then
-      continue
-    fi
-    return 0
-  done <<<"$files"
-
-  if [ "$saw_any" = "false" ]; then
-    return 1
-  fi
-
+  # CHANGELOG.md is release-owned. Normal PRs carry release-note context in
+  # PR bodies and commit messages; release automation generates the file.
   return 1
 }
 

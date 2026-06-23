@@ -1,3 +1,4 @@
+// Tests atomic file replacement helpers and permission handling.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -25,8 +26,17 @@ describe("movePathWithCopyFallback", () => {
           }),
         ).rejects.toThrow("Hardlinked source file is not allowed");
 
-        await expect(fs.stat(sourceFile)).resolves.toBeTruthy();
-        await expect(fs.stat(targetDir)).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(fs.readFile(sourceFile, "utf8")).resolves.toBe("hello");
+        let statError: NodeJS.ErrnoException | undefined;
+        try {
+          await fs.stat(targetDir);
+        } catch (error) {
+          statError = error as NodeJS.ErrnoException;
+        }
+        expect(statError).toBeInstanceOf(Error);
+        expect(statError?.code).toBe("ENOENT");
+        expect(statError?.path).toBe(targetDir);
+        expect(statError?.syscall).toBe("stat");
       });
     },
   );

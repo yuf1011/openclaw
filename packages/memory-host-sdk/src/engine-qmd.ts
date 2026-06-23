@@ -7,8 +7,13 @@ export {
   loadDreamingNarrativeTranscriptPathSetForAgent,
   loadSessionTranscriptClassificationForAgent,
   normalizeSessionTranscriptPathForComparison,
+  parseCanonicalSessionSyncTargetFromPath,
+  resolveSessionIdentityForTranscriptFile,
+  resolveSessionFileForSyncTarget,
   sessionPathForFile,
   type BuildSessionEntryOptions,
+  type ResolvedMemorySessionSyncTarget,
+  type ResolvedSessionTranscriptIdentity,
   type SessionFileEntry,
   type SessionTranscriptClassification,
 } from "./host/session-files.js";
@@ -26,5 +31,9 @@ export {
 export {
   checkQmdBinaryAvailability,
   resolveCliSpawnInvocation,
+  resolveQmdBinaryUnavailableReason,
   runCliCommand,
+  type QmdBinaryAvailability,
+  type QmdBinaryUnavailable,
+  type QmdBinaryUnavailableReason,
 } from "./host/qmd-process.js";
