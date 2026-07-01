@@ -355,6 +355,12 @@ type EmbeddedAgentParams = {
   }) => void;
   onBlockReply?: (payload: { text?: string; mediaUrls?: string[] }) => Promise<void> | void;
   onToolResult?: (payload: { text?: string; mediaUrls?: string[] }) => Promise<void> | void;
+  onReasoningStream?: (payload: {
+    text?: string;
+    mediaUrls?: string[];
+    isReasoningSnapshot?: boolean;
+    requiresReasoningProgressOptIn?: boolean;
+  }) => Promise<void> | void;
   onItemEvent?: (payload: {
     itemId?: string;
     toolCallId?: string;
@@ -448,6 +454,7 @@ function createMockReplyOperation(): {
       sessionId: "session",
       abortSignal: new AbortController().signal,
       resetTriggered: false,
+      terminalRecovery: false,
       phase: "running",
       result: null,
       setPhase: vi.fn(),
@@ -461,6 +468,7 @@ function createMockReplyOperation(): {
       fail: failMock,
       abortByUser: vi.fn(),
       abortForRestart: vi.fn(),
+      markTerminalRecovery: vi.fn(),
     },
   };
 }
@@ -3429,6 +3437,38 @@ describe("runAgentTurnWithFallback", () => {
     });
 
     expect(onReasoningStream).not.toHaveBeenCalled();
+  });
+
+  it("preserves embedded reasoning stream opt-in markers", async () => {
+    state.runEmbeddedAgentMock.mockImplementationOnce(async (params: EmbeddedAgentParams) => {
+      await params.onReasoningStream?.({ text: "stream thought" });
+      await params.onReasoningStream?.({
+        text: "ambient thought",
+        requiresReasoningProgressOptIn: true,
+      });
+      return { payloads: [{ text: "final" }], meta: {} };
+    });
+
+    const onReasoningStream = vi.fn<NonNullable<GetReplyOptions["onReasoningStream"]>>(
+      async (_payload) => undefined,
+    );
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+
+    await runAgentTurnWithFallback(
+      createMinimalRunAgentTurnParams({
+        opts: { onReasoningStream },
+      }),
+    );
+
+    expect(
+      onReasoningStream.mock.calls.map(([payload]) => ({
+        text: payload.text,
+        requiresReasoningProgressOptIn: payload.requiresReasoningProgressOptIn,
+      })),
+    ).toEqual([
+      { text: "stream thought", requiresReasoningProgressOptIn: undefined },
+      { text: "ambient thought", requiresReasoningProgressOptIn: true },
+    ]);
   });
 
   it("resolves CLI messageProvider from the live session surface when no origin channel is set", async () => {
